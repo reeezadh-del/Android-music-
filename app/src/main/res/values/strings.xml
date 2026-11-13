@@ -1,11 +1,32 @@
 <resources>
-    <string name="app_name">melodi</string>
+    <string name="app_name">CarPlay HUR</string>
     <string name="nav_home">خانه</string>
     <string name="nav_online">آنلاین</string>
     <string name="nav_library">کتابخانه</string>
     <string name="nav_equalizer">اکولایزر</string>
     <string name="nav_playlists">پلی‌لیست</string>
     <string name="nav_auto">اتو</string>
+
+    <string name="carplay_dashboard_title">داشبورد کارپلی</string>
+    <string name="carplay_apps_title">اپلیکیشن‌ها</string>
+    <string name="carplay_aa_stream_title">اندروید اتو (HUR)</string>
+    <string name="carplay_music_title">موزیک</string>
+    <string name="carplay_maps_title">نقشه و GPS</string>
+    <string name="carplay_phone_title">تلفن</string>
+    <string name="carplay_messages_title">پیام‌ها</string>
+    <string name="carplay_equalizer_title">اکولایزر</string>
+    <string name="carplay_all_apps_title">برنامه‌های گوشی</string>
+    <string name="carplay_settings_title">تنظیمات HUR</string>
+
+    <string name="hur_mode_self">حالت خودکار (Self Mode)</string>
+    <string name="hur_mode_wifi_server">سرور وای‌فای (:5277)</string>
+    <string name="hur_mode_wifi_client">اتصال به IP وای‌فای</string>
+    <string name="hur_mode_usb">کابل USB (AOAP)</string>
+    <string name="hur_start_receiver">شروع دریافت اندروید اتو</string>
+    <string name="hur_stop_receiver">قطع اتصال</string>
+    <string name="hur_settings_graphics">تنظیمات تصویر و کارپلی</string>
+    <string name="hur_settings_connectivity">اتصال و شبکه (HUR)</string>
+    <string name="hur_settings_audio">صدا، میکروفون و نمایشگر</string>
 
     <string name="online_title">موزیک آنلاین</string>
     <string name="online_subtitle">دریافت و پخش مستقیم موزیک‌های جدید از سایت‌های ایرانی و وب بدون سرور</string>

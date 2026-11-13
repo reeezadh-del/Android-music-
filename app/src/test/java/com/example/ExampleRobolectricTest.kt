@@ -6,6 +6,12 @@ import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.model.Track
 import com.example.data.repository.MusicRepository
+import com.example.headunit.CarPlayDockSide
+import com.example.headunit.CarPlayThemeMode
+import com.example.headunit.HeadunitPreferences
+import com.example.headunit.HurConnectionMode
+import com.example.headunit.HurResolution
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,7 +29,7 @@ class ExampleRobolectricTest {
     @Test
     fun `app metadata and Android Auto service are configured`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        assertEquals("melodi", context.getString(R.string.app_name))
+        assertEquals("CarPlay HUR", context.getString(R.string.app_name))
 
         val appInfo = context.packageManager.getApplicationInfo(
             context.packageName,
@@ -38,6 +44,31 @@ class ExampleRobolectricTest {
         val resolvedServices = context.packageManager.queryIntentServices(mediaLibraryIntent, 0)
         assertTrue(resolvedServices.isNotEmpty())
         assertTrue(resolvedServices.first().serviceInfo.exported)
+    }
+
+    @Test
+    fun `headunit preferences persist connection mode, CarPlay theme, and display settings`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = HeadunitPreferences(context)
+
+        prefs.updateSettings {
+            it.copy(
+                connectionMode = HurConnectionMode.SELF_MODE,
+                resolution = HurResolution.FHD_1080P,
+                dpi = 200,
+                targetFps = 60,
+                carPlayTheme = CarPlayThemeMode.DAY_FROST,
+                dockSide = CarPlayDockSide.RIGHT
+            )
+        }
+
+        val loaded = prefs.settingsFlow.first()
+        assertEquals(HurConnectionMode.SELF_MODE, loaded.connectionMode)
+        assertEquals(HurResolution.FHD_1080P, loaded.resolution)
+        assertEquals(200, loaded.dpi)
+        assertEquals(60, loaded.targetFps)
+        assertEquals(CarPlayThemeMode.DAY_FROST, loaded.carPlayTheme)
+        assertEquals(CarPlayDockSide.RIGHT, loaded.dockSide)
     }
 
     @Test

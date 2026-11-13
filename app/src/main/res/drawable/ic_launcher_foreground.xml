@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/melodi_apple_icon_1794554117131"
+        android:drawable="@drawable/ic_carplay_hur_fg_1794554519339"
         android:gravity="center" />
 </layer-list>

@@ -1,6 +1,6 @@
 {
-  "name": "melodi",
-  "description": "پخش‌کننده موسیقی حرفه‌ای با پشتیبانی کامل از اندروید اتو (Android Auto)، اکولایزر ۵ بانده، موزیک آنلاین و حالت رانندگی",
+  "name": "CarPlay HUR",
+  "description": "گیرنده اندروید اتو (مشابه Headunit Reloaded) با رابط کاربری Apple CarPlay، پشتیبانی از USB AOAP، وای‌فای و حالت خودکار همراه با پخش‌کننده موزیک و سرعت‌سنج GPS",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
