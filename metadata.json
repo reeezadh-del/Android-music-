@@ -1,0 +1,6 @@
+{
+  "name": "آوا پلیر",
+  "description": "پخش‌کننده موسیقی حرفه‌ای با پشتیبانی کامل از اندروید اتو (Android Auto)، اکولایزر ۵ بانده و حالت رانندگی",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,71 @@
+<resources>
+    <string name="app_name">آوا پلیر</string>
+    <string name="nav_home">خانه</string>
+    <string name="nav_library">کتابخانه</string>
+    <string name="nav_playlists">پلی‌لیست‌ها</string>
+    <string name="nav_auto">اندروید اتو</string>
+
+    <string name="hero_badge">آماده اتصال به خودرو</string>
+    <string name="hero_title">میکس رانندگی شبانه</string>
+    <string name="hero_subtitle">تجربه صدای بی‌نقص در گوشی و نمایشگر خودرو</string>
+    <string name="action_play_driving_mix">پخش میکس رانندگی</string>
+    <string name="action_car_mode">حالت رانندگی</string>
+    <string name="action_import_audio">افزودن آهنگ از دستگاه</string>
+
+    <string name="section_featured_albums">آلبوم‌های برگزیده</string>
+    <string name="section_quick_tracks">پخش سریع</string>
+    <string name="section_recent_plays">آهنگ‌های اخیر</string>
+
+    <string name="search_hint">جستجوی آهنگ، هنرمند یا آلبوم…</string>
+    <string name="filter_all">همه آهنگ‌ها</string>
+    <string name="filter_favorites">علاقه‌مندی‌ها</string>
+    <string name="filter_imported">افزوده‌شده</string>
+
+    <string name="empty_favorites_title">هنوز آهنگ محبوبی ندارید</string>
+    <string name="empty_favorites_subtitle">روی آیکون قلب کنار هر آهنگ بزنید تا در این بخش و اندروید اتو نمایش داده شود.</string>
+    <string name="empty_search_title">نتیجه‌ای پیدا نشد</string>
+    <string name="empty_search_subtitle">عبارت دیگری جستجو کنید یا آهنگ جدیدی از حافظه دستگاه اضافه نمایید.</string>
+    <string name="empty_playlist_title">پلی‌لیست خالی است</string>
+    <string name="empty_playlist_subtitle">از کتابخانه، آهنگ‌های دلخواه خود را به این پلی‌لیست اضافه کنید.</string>
+
+    <string name="action_create_playlist">ساخت پلی‌لیست جدید</string>
+    <string name="playlist_name_label">نام پلی‌لیست</string>
+    <string name="playlist_name_placeholder">مثلاً: جاده شمال</string>
+    <string name="action_create">ساختن</string>
+    <string name="action_cancel">انصراف</string>
+    <string name="action_delete">حذف</string>
+    <string name="action_add_to_playlist">افزودن به پلی‌لیست</string>
+    <string name="action_play_next">پخش بعدی</string>
+
+    <string name="now_playing_title">در حال پخش</string>
+    <string name="queue_title">صف پخش</string>
+    <string name="equalizer_title">اکولایزر صدا</string>
+    <string name="sleep_timer_title">تایمر خواب</string>
+    <string name="sleep_timer_off">خاموش</string>
+
+    <string name="auto_hub_title">مرکز اندروید اتو و خودرو</string>
+    <string name="auto_service_active">سرویس MediaLibraryService فعال و آماده کشف توسط Android Auto است</string>
+    <string name="auto_browse_preview_title">ساختار منوی اندروید اتو</string>
+    <string name="auto_browse_preview_subtitle">دسته‌بندی‌هایی که روی نمایشگر خودرو نمایش داده می‌شوند</string>
+    <string name="auto_voice_hint">پشتیبانی از جستجوی صوتی Google Assistant در خودرو</string>
+
+    <string name="auto_tab_all_songs">همه آهنگ‌ها</string>
+    <string name="auto_tab_albums">آلبوم‌ها</string>
+    <string name="auto_tab_favorites">علاقه‌مندی‌ها</string>
+    <string name="auto_tab_playlists">پلی‌لیست‌ها</string>
+    <string name="auto_action_favorite">علاقه‌مندی</string>
+    <string name="auto_action_shuffle">پخش تصادفی</string>
+
+    <string name="cd_play">پخش</string>
+    <string name="cd_pause">توقف</string>
+    <string name="cd_next">آهنگ بعدی</string>
+    <string name="cd_previous">آهنگ قبلی</string>
+    <string name="cd_favorite">افزودن به علاقه‌مندی‌ها</string>
+    <string name="cd_unfavorite">حذف از علاقه‌مندی‌ها</string>
+    <string name="cd_shuffle">پخش تصادفی</string>
+    <string name="cd_repeat">تکرار</string>
+    <string name="cd_back">بازگشت</string>
+    <string name="cd_album_art">کاور آلبوم</string>
+    <string name="cd_close">بستن</string>
+    <string name="cd_more_options">گزینه‌های بیشتر</string>
+</resources>
