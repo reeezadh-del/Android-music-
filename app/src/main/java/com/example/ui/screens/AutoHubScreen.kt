@@ -35,13 +35,9 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,7 +58,6 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.AlbumSummary
 import com.example.data.model.AutoBrowseNodePreview
-import com.example.data.model.EqualizerPreset
 import com.example.data.model.EqualizerUiState
 import com.example.data.model.Playlist
 import com.example.data.model.Track
@@ -82,12 +77,10 @@ fun AutoHubScreen(
     equalizerState: EqualizerUiState,
     sleepTimerRemainingMinutes: Int,
     onOpenCarMode: () -> Unit,
+    onOpenEqualizer: () -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
     onPlayAlbum: (AlbumSummary) -> Unit,
     onPlayPlaylist: (Playlist) -> Unit,
-    onSetEqualizerEnabled: (Boolean) -> Unit,
-    onSelectEqualizerPreset: (EqualizerPreset) -> Unit,
-    onSetEqualizerBand: (Int, Int) -> Unit,
     onSetSleepTimer: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -349,9 +342,10 @@ fun AutoHubScreen(
             }
         }
 
-        // Real 5-Band Equalizer Section
+        // Quick Shortcut Card to 5-Band Media3 Equalizer Studio
         item {
             Surface(
+                onClick = onOpenEqualizer,
                 shape = RoundedCornerShape(22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier
@@ -361,88 +355,47 @@ fun AutoHubScreen(
                         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
                         RoundedCornerShape(22.dp)
                     )
+                    .testTag("auto_hub_equalizer_card")
             ) {
-                Column(
+                Row(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Equalizer,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = stringResource(R.string.equalizer_title),
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                        }
-                        Switch(
-                            checked = equalizerState.isEnabled,
-                            onCheckedChange = onSetEqualizerEnabled,
-                            modifier = Modifier.testTag("equalizer_switch")
+                        Icon(
+                            imageVector = Icons.Rounded.Equalizer,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
-
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        EqualizerPreset.entries.forEach { preset ->
-                            FilterChip(
-                                selected = equalizerState.selectedPreset == preset,
-                                onClick = { onSelectEqualizerPreset(preset) },
-                                label = { Text(preset.titleFa) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
-                        }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.equalizer_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (equalizerState.isEnabled) {
+                                "فعال • ${equalizerState.selectedPreset.titleFa}"
+                            } else {
+                                "خاموش • لمس برای تنظیم ۵ باند فرکانسی Media3"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-
-                    equalizerState.bands.forEach { band ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Text(
-                                text = band.frequencyLabel,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontFamily = OutfitFontFamily,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(46.dp)
-                            )
-                            Slider(
-                                value = band.levelMb.toFloat(),
-                                onValueChange = { onSetEqualizerBand(band.bandIndex, it.toInt()) },
-                                valueRange = band.minLevelMb.toFloat()..band.maxLevelMb.toFloat(),
-                                enabled = equalizerState.isEnabled,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
-                            val db = band.levelMb / 100f
-                            Text(
-                                text = "${if (db >= 0) "+" else ""}${"%.1f".format(db)}dB",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = OutfitFontFamily,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(48.dp)
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Rounded.PlayArrow,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }

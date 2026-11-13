@@ -42,15 +42,18 @@ enum class RepeatModeOption {
 }
 
 enum class EqualizerPreset(val titleFa: String, val bandOffsetsMb: List<Int>) {
+    CUSTOM("سفارشی", listOf(0, 0, 0, 0, 0)),
     FLAT("طبیعی (Flat)", listOf(0, 0, 0, 0, 0)),
-    BASS_BOOST("تقویت بیس", listOf(500, 350, 50, -50, 100)),
-    ROAD_TRIP("حالت جاده و خودرو", listOf(400, 150, 100, 250, 350)),
-    VOCAL_CLARITY("وضوح صدا و پادکست", listOf(-200, 100, 450, 350, 100)),
-    NIGHT_CHILL("آرامش شبانه", listOf(250, 100, -100, 150, 300))
+    ROAD_TRIP("حالت جاده و خودرو", listOf(450, 200, 50, 300, 400)),
+    BASS_BOOST("تقویت بیس", listOf(750, 450, 50, -50, 150)),
+    VOCAL_CLARITY("وضوح صدا و پادکست", listOf(-250, 100, 550, 450, 150)),
+    ROCK("راک و انرژی", listOf(500, 250, -150, 350, 550)),
+    NIGHT_CHILL("آرامش شبانه", listOf(300, 150, -150, 200, 350))
 }
 
 data class EqualizerBandUi(
     val bandIndex: Int,
+    val frequencyHz: Int,
     val frequencyLabel: String,
     val levelMb: Int,
     val minLevelMb: Int,
@@ -61,7 +64,13 @@ data class EqualizerUiState(
     val isSupported: Boolean = true,
     val isEnabled: Boolean = false,
     val selectedPreset: EqualizerPreset = EqualizerPreset.ROAD_TRIP,
-    val bands: List<EqualizerBandUi> = emptyList()
+    val bands: List<EqualizerBandUi> = emptyList(),
+    val preampDb: Float = 0f,
+    val bassBoostPercent: Int = 0,
+    val playbackSpeed: Float = 1.0f,
+    val skipSilenceEnabled: Boolean = false,
+    val audioSessionId: Int = 0,
+    val sampleRateHz: Int = 44100
 )
 
 data class AutoBrowseNodePreview(

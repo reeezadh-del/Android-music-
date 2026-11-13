@@ -212,6 +212,27 @@ class MusicRepository(private val context: Context) {
         dao.deleteImportedTrack(trackId)
     }
 
+    suspend fun saveOnlineTrack(track: Track) = withContext(Dispatchers.IO) {
+        dao.insertTracks(
+            listOf(
+                TrackEntity(
+                    id = track.id,
+                    title = track.title,
+                    artist = track.artist,
+                    album = track.album,
+                    durationMs = track.durationMs,
+                    mediaUri = track.mediaUri,
+                    artworkUri = track.artworkUri,
+                    isFavorite = true,
+                    isImported = true,
+                    genre = track.genre,
+                    accentColorHex = track.accentColorHex,
+                    addedAt = System.currentTimeMillis()
+                )
+            )
+        )
+    }
+
     suspend fun importAudioUris(uris: List<Uri>): Int = withContext(Dispatchers.IO) {
         if (uris.isEmpty()) return@withContext 0
         val newEntities = mutableListOf<TrackEntity>()

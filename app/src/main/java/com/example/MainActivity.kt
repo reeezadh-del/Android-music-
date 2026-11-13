@@ -26,14 +26,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.QueueMusic
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.Equalizer
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -74,9 +76,11 @@ import com.example.ui.components.MiniPlayerBar
 import com.example.ui.screens.AutoHubScreen
 import com.example.ui.screens.CarModeScreen
 import com.example.ui.screens.CreatePlaylistDialog
+import com.example.ui.screens.EqualizerScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.NowPlayingScreen
+import com.example.ui.screens.OnlineMusicScreen
 import com.example.ui.screens.PlaylistsScreen
 import com.example.ui.theme.AvaPlayerTheme
 import com.example.ui.viewmodel.AvaPlayerViewModel
@@ -88,7 +92,13 @@ sealed interface AvaRoute {
     data object Home : AvaRoute
 
     @Serializable
+    data object Online : AvaRoute
+
+    @Serializable
     data object Library : AvaRoute
+
+    @Serializable
+    data object Equalizer : AvaRoute
 
     @Serializable
     data object Playlists : AvaRoute
@@ -138,6 +148,11 @@ fun AvaPlayerApp(
     val equalizerState by viewModel.equalizerState.collectAsStateWithLifecycle()
     val sleepTimerMinutes by viewModel.sleepTimerRemainingMinutes.collectAsStateWithLifecycle()
     val statusBanner by viewModel.statusBannerMessage.collectAsStateWithLifecycle()
+    val onlineFeedState by viewModel.onlineFeedState.collectAsStateWithLifecycle()
+    val onlineSourceMode by viewModel.onlineSourceMode.collectAsStateWithLifecycle()
+    val onlineGenre by viewModel.onlineGenre.collectAsStateWithLifecycle()
+    val onlineRadioCategory by viewModel.onlineRadioCategory.collectAsStateWithLifecycle()
+    val onlineSearchQuery by viewModel.onlineSearchQuery.collectAsStateWithLifecycle()
 
     var isNowPlayingOpen by rememberSaveable { mutableStateOf(false) }
     var isCarModeOpen by rememberSaveable { mutableStateOf(false) }
@@ -188,6 +203,13 @@ fun AvaPlayerApp(
                 testTag = "nav_home"
             ),
             TopLevelDestination(
+                route = AvaRoute.Online,
+                labelRes = R.string.nav_online,
+                selectedIcon = Icons.Rounded.Public,
+                unselectedIcon = Icons.Outlined.Public,
+                testTag = "nav_online"
+            ),
+            TopLevelDestination(
                 route = AvaRoute.Library,
                 labelRes = R.string.nav_library,
                 selectedIcon = Icons.Rounded.LibraryMusic,
@@ -195,11 +217,11 @@ fun AvaPlayerApp(
                 testTag = "nav_library"
             ),
             TopLevelDestination(
-                route = AvaRoute.Playlists,
-                labelRes = R.string.nav_playlists,
-                selectedIcon = Icons.AutoMirrored.Rounded.QueueMusic,
-                unselectedIcon = Icons.AutoMirrored.Outlined.QueueMusic,
-                testTag = "nav_playlists"
+                route = AvaRoute.Equalizer,
+                labelRes = R.string.nav_equalizer,
+                selectedIcon = Icons.Rounded.Equalizer,
+                unselectedIcon = Icons.Outlined.Equalizer,
+                testTag = "nav_equalizer"
             ),
             TopLevelDestination(
                 route = AvaRoute.AutoHub,
@@ -344,6 +366,31 @@ fun AvaPlayerApp(
                                 )
                             }
 
+                            composable<AvaRoute.Online> {
+                                val savedIds = remember(allTracks) {
+                                    allTracks.map { it.id }.toSet()
+                                }
+                                OnlineMusicScreen(
+                                    feedState = onlineFeedState,
+                                    sourceMode = onlineSourceMode,
+                                    selectedGenre = onlineGenre,
+                                    selectedRadioCategory = onlineRadioCategory,
+                                    searchQuery = onlineSearchQuery,
+                                    savedTrackIds = savedIds,
+                                    currentTrackId = activeTrack?.id,
+                                    isPlaying = playbackState.isPlaying,
+                                    onSelectMode = viewModel::selectOnlineMode,
+                                    onSelectGenre = viewModel::selectOnlineGenre,
+                                    onSelectRadioCategory = viewModel::selectOnlineRadioCategory,
+                                    onSearchQueryChange = viewModel::setOnlineSearchQuery,
+                                    onSubmitSearch = viewModel::loadOnlineFeed,
+                                    onRefresh = viewModel::loadOnlineFeed,
+                                    onPlayTrack = viewModel::playTrackInList,
+                                    onPlayNext = viewModel::addTrackToQueueNext,
+                                    onSaveToLibrary = viewModel::saveOnlineTrackToLibrary
+                                )
+                            }
+
                             composable<AvaRoute.Library> {
                                 LibraryScreen(
                                     tracks = filteredTracks,
@@ -356,11 +403,30 @@ fun AvaPlayerApp(
                                     onImportAudio = {
                                         audioPickerLauncher.launch(arrayOf("audio/*"))
                                     },
+                                    onOpenPlaylists = {
+                                        navController.navigate(AvaRoute.Playlists) {
+                                            launchSingleTop = true
+                                        }
+                                    },
                                     onPlayTrack = viewModel::playTrackInList,
                                     onToggleFavorite = viewModel::toggleFavorite,
                                     onPlayNext = viewModel::addTrackToQueueNext,
                                     onAddToPlaylist = { track -> trackForPlaylistSheet = track },
                                     onDeleteImported = viewModel::deleteImportedTrack
+                                )
+                            }
+
+                            composable<AvaRoute.Equalizer> {
+                                EqualizerScreen(
+                                    equalizerState = equalizerState,
+                                    onSetEnabled = viewModel::setEqualizerEnabled,
+                                    onSelectPreset = viewModel::selectEqualizerPreset,
+                                    onSetBandLevel = viewModel::setEqualizerBand,
+                                    onSetPreampDb = viewModel::setPreampDb,
+                                    onSetBassBoostPercent = viewModel::setBassBoostPercent,
+                                    onSetPlaybackSpeed = viewModel::setMedia3PlaybackSpeed,
+                                    onSetSkipSilence = viewModel::setMedia3SkipSilence,
+                                    onReset = viewModel::resetEqualizer
                                 )
                             }
 
@@ -372,7 +438,8 @@ fun AvaPlayerApp(
                                     onPlayPlaylist = viewModel::playPlaylist,
                                     onPlayTrackInPlaylist = viewModel::playTrackInList,
                                     onRemoveTrackFromPlaylist = viewModel::removeTrackFromPlaylist,
-                                    onDeletePlaylist = viewModel::deletePlaylist
+                                    onDeletePlaylist = viewModel::deletePlaylist,
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
 
@@ -387,12 +454,18 @@ fun AvaPlayerApp(
                                     equalizerState = equalizerState,
                                     sleepTimerRemainingMinutes = sleepTimerMinutes,
                                     onOpenCarMode = { isCarModeOpen = true },
+                                    onOpenEqualizer = {
+                                        navController.navigate(AvaRoute.Equalizer) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
                                     onPlayTrack = viewModel::playTrackInList,
                                     onPlayAlbum = viewModel::playAlbum,
                                     onPlayPlaylist = viewModel::playPlaylist,
-                                    onSetEqualizerEnabled = viewModel::setEqualizerEnabled,
-                                    onSelectEqualizerPreset = viewModel::selectEqualizerPreset,
-                                    onSetEqualizerBand = viewModel::setEqualizerBand,
                                     onSetSleepTimer = viewModel::setSleepTimer
                                 )
                             }
@@ -443,6 +516,16 @@ fun AvaPlayerApp(
                     onOpenCarMode = {
                         isNowPlayingOpen = false
                         isCarModeOpen = true
+                    },
+                    onOpenEqualizer = {
+                        isNowPlayingOpen = false
+                        navController.navigate(AvaRoute.Equalizer) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 )
             }

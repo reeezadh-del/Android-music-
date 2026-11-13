@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.LibraryAdd
@@ -27,6 +28,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -52,6 +54,7 @@ fun LibraryScreen(
     onSearchQueryChange: (String) -> Unit,
     onFilterSelect: (LibraryFilter) -> Unit,
     onImportAudio: () -> Unit,
+    onOpenPlaylists: () -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onPlayNext: (Track) -> Unit,
@@ -75,18 +78,33 @@ fun LibraryScreen(
                 text = stringResource(R.string.nav_library),
                 style = MaterialTheme.typography.headlineMedium
             )
-            Button(
-                onClick = onImportAudio,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.testTag("library_import_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.LibraryAdd,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("افزودن آهنگ")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onOpenPlaylists,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.testTag("library_playlists_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.nav_playlists))
+                }
+                Button(
+                    onClick = onImportAudio,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.testTag("library_import_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.LibraryAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("افزودن")
+                }
             }
         }
 

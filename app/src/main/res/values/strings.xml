@@ -1,9 +1,22 @@
 <resources>
     <string name="app_name">آوا پلیر</string>
     <string name="nav_home">خانه</string>
+    <string name="nav_online">آنلاین</string>
     <string name="nav_library">کتابخانه</string>
-    <string name="nav_playlists">پلی‌لیست‌ها</string>
-    <string name="nav_auto">اندروید اتو</string>
+    <string name="nav_equalizer">اکولایزر</string>
+    <string name="nav_playlists">پلی‌لیست</string>
+    <string name="nav_auto">اتو</string>
+
+    <string name="online_title">موزیک آنلاین</string>
+    <string name="online_subtitle">پخش مستقیم جدیدترین موزیک‌های وب بدون نیاز به سرور</string>
+    <string name="online_mode_tracks">آهنگ‌های جدید وب</string>
+    <string name="online_mode_radio">رادیو آنلاین زنده</string>
+    <string name="online_search_hint">جستجوی آنلاین آهنگ یا هنرمند در سطح وب…</string>
+    <string name="online_loading">در حال دریافت موزیک‌های جدید از وب…</string>
+    <string name="online_error_title">خطا در دریافت لیست موزیک‌ها</string>
+    <string name="online_retry">تلاش مجدد</string>
+    <string name="online_save_to_library">ذخیره در کتابخانه</string>
+    <string name="online_live_badge">پخش زنده</string>
 
     <string name="hero_badge">آماده اتصال به خودرو</string>
     <string name="hero_title">میکس رانندگی شبانه</string>
@@ -39,7 +52,14 @@
 
     <string name="now_playing_title">در حال پخش</string>
     <string name="queue_title">صف پخش</string>
-    <string name="equalizer_title">اکولایزر صدا</string>
+    <string name="equalizer_title">اکولایزر ۵ بانده</string>
+    <string name="equalizer_subtitle">پردازشگر صوتی زنده Media3 DSP</string>
+    <string name="equalizer_reset">بازنشانی</string>
+    <string name="equalizer_media3_settings">تنظیمات صدای Media3</string>
+    <string name="equalizer_preamp">پیش‌تقویت صدا (Preamp)</string>
+    <string name="equalizer_bass_boost">تقویت فرکانس‌های بم (Bass Boost)</string>
+    <string name="equalizer_playback_speed">سرعت پخش Media3</string>
+    <string name="equalizer_skip_silence">حذف سکوت بین جملات (Skip Silence)</string>
     <string name="sleep_timer_title">تایمر خواب</string>
     <string name="sleep_timer_off">خاموش</string>
 

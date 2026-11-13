@@ -1,6 +1,5 @@
 package com.example.audio
 
-import android.media.audiofx.Equalizer
 import com.example.data.model.EqualizerBandUi
 import com.example.data.model.EqualizerPreset
 import com.example.data.model.EqualizerUiState
@@ -10,157 +9,159 @@ import kotlinx.coroutines.flow.asStateFlow
 
 object EqualizerController {
 
-    private var equalizer: Equalizer? = null
-    private var currentSessionId: Int = 0
-    private var desiredEnabled: Boolean = false
-    private var desiredPreset: EqualizerPreset = EqualizerPreset.ROAD_TRIP
-    private var customLevelsMb: MutableMap<Int, Int> = mutableMapOf()
+    private val bandFreqs = intArrayOf(60, 230, 910, 3600, 14000)
+    private const val MIN_MB = -1200
+    private const val MAX_MB = 1200
 
-    private val _state = MutableStateFlow(defaultPlaceholderState())
+    private var currentSessionId: Int = 0
+    private var desiredEnabled: Boolean = true
+    private var desiredPreset: EqualizerPreset = EqualizerPreset.ROAD_TRIP
+    private var currentLevelsMb: IntArray = EqualizerPreset.ROAD_TRIP.bandOffsetsMb.toIntArray()
+    private var preampDb: Float = 0f
+    private var bassBoostPercent: Int = 0
+    private var playbackSpeed: Float = 1.0f
+    private var skipSilenceEnabled: Boolean = false
+    private var sampleRateHz: Int = 44100
+
+    private val _state = MutableStateFlow(buildUiState())
     val state: StateFlow<EqualizerUiState> = _state.asStateFlow()
 
     fun attachToAudioSession(audioSessionId: Int) {
-        if (audioSessionId <= 0 || audioSessionId == currentSessionId && equalizer != null) return
-        release()
-        currentSessionId = audioSessionId
-        try {
-            val eq = Equalizer(0, audioSessionId)
-            eq.enabled = desiredEnabled
-            equalizer = eq
-            applyPresetInternal(eq, desiredPreset)
-            publishFromHardware(eq)
-        } catch (_: Throwable) {
-            // Fallback gracefully on devices/emulators without AudioEffect hardware support
-            equalizer = null
-            publishFallbackState(supported = false)
+        if (audioSessionId > 0) {
+            currentSessionId = audioSessionId
         }
+        syncProcessor()
+        publishState()
+    }
+
+    fun restoreSavedConfig(
+        enabled: Boolean,
+        preset: EqualizerPreset,
+        bandLevelsMb: List<Int>,
+        savedPreampDb: Float,
+        savedBassBoostPercent: Int,
+        savedPlaybackSpeed: Float,
+        savedSkipSilence: Boolean
+    ) {
+        desiredEnabled = enabled
+        desiredPreset = preset
+        val levels = if (preset == EqualizerPreset.CUSTOM && bandLevelsMb.size == 5) {
+            bandLevelsMb
+        } else if (bandLevelsMb.size == 5 && preset != EqualizerPreset.FLAT) {
+            bandLevelsMb
+        } else {
+            preset.bandOffsetsMb
+        }
+        for (i in 0 until 5) {
+            currentLevelsMb[i] = levels.getOrElse(i) { 0 }.coerceIn(MIN_MB, MAX_MB)
+        }
+        preampDb = savedPreampDb.coerceIn(-6f, 6f)
+        bassBoostPercent = savedBassBoostPercent.coerceIn(0, 100)
+        playbackSpeed = savedPlaybackSpeed.coerceIn(0.75f, 1.5f)
+        skipSilenceEnabled = savedSkipSilence
+        syncProcessor()
+        publishState()
     }
 
     fun setEnabled(enabled: Boolean) {
         desiredEnabled = enabled
-        val eq = equalizer
-        if (eq != null) {
-            runCatching {
-                eq.enabled = enabled
-                publishFromHardware(eq)
-            }.onFailure {
-                publishFallbackState(supported = false)
-            }
-        } else {
-            _state.value = _state.value.copy(isEnabled = enabled)
-        }
+        syncProcessor()
+        publishState()
     }
 
     fun applyPreset(preset: EqualizerPreset) {
         desiredPreset = preset
-        customLevelsMb.clear()
-        val eq = equalizer
-        if (eq != null) {
-            runCatching {
-                applyPresetInternal(eq, preset)
-                publishFromHardware(eq)
+        if (preset != EqualizerPreset.CUSTOM) {
+            for (i in 0 until 5) {
+                currentLevelsMb[i] = preset.bandOffsetsMb.getOrElse(i) { 0 }.coerceIn(MIN_MB, MAX_MB)
             }
-        } else {
-            publishFallbackState(supported = _state.value.isSupported)
         }
+        syncProcessor()
+        publishState()
     }
 
     fun setBandLevel(bandIndex: Int, levelMb: Int) {
-        customLevelsMb[bandIndex] = levelMb
-        val eq = equalizer
-        if (eq != null) {
-            runCatching {
-                val range = eq.bandLevelRange
-                val clamped = levelMb.coerceIn(range[0].toInt(), range[1].toInt()).toShort()
-                eq.setBandLevel(bandIndex.toShort(), clamped)
-                publishFromHardware(eq)
-            }
-        } else {
-            val updatedBands = _state.value.bands.map { band ->
-                if (band.bandIndex == bandIndex) band.copy(levelMb = levelMb) else band
-            }
-            _state.value = _state.value.copy(bands = updatedBands)
-        }
+        if (bandIndex !in 0..4) return
+        currentLevelsMb[bandIndex] = levelMb.coerceIn(MIN_MB, MAX_MB)
+        desiredPreset = EqualizerPreset.CUSTOM
+        syncProcessor()
+        publishState()
     }
 
-    private fun applyPresetInternal(eq: Equalizer, preset: EqualizerPreset) {
-        val bandCount = eq.numberOfBands.toInt()
-        val range = eq.bandLevelRange
-        val min = range[0].toInt()
-        val max = range[1].toInt()
-        for (i in 0 until bandCount) {
-            val target = customLevelsMb[i] ?: preset.bandOffsetsMb.getOrElse(i) { 0 }
-            eq.setBandLevel(i.toShort(), target.coerceIn(min, max).toShort())
-        }
+    fun setPreampDb(db: Float) {
+        preampDb = db.coerceIn(-6f, 6f)
+        syncProcessor()
+        publishState()
     }
 
-    private fun publishFromHardware(eq: Equalizer) {
-        val bandCount = eq.numberOfBands.toInt()
-        val range = eq.bandLevelRange
-        val min = range[0].toInt()
-        val max = range[1].toInt()
-        val bands = (0 until bandCount).map { idx ->
-            val freqHz = eq.getCenterFreq(idx.toShort()) / 1000
-            EqualizerBandUi(
-                bandIndex = idx,
-                frequencyLabel = formatFreq(freqHz),
-                levelMb = eq.getBandLevel(idx.toShort()).toInt(),
-                minLevelMb = min,
-                maxLevelMb = max
-            )
-        }
-        _state.value = EqualizerUiState(
-            isSupported = true,
-            isEnabled = eq.enabled,
-            selectedPreset = desiredPreset,
-            bands = bands
-        )
+    fun setBassBoostPercent(percent: Int) {
+        bassBoostPercent = percent.coerceIn(0, 100)
+        syncProcessor()
+        publishState()
     }
 
-    private fun publishFallbackState(supported: Boolean) {
-        val freqs = listOf(60, 230, 910, 3600, 14000)
-        val bands = freqs.mapIndexed { idx, hz ->
-            val level = customLevelsMb[idx] ?: desiredPreset.bandOffsetsMb.getOrElse(idx) { 0 }
-            EqualizerBandUi(
-                bandIndex = idx,
-                frequencyLabel = formatFreq(hz),
-                levelMb = level,
-                minLevelMb = -1500,
-                maxLevelMb = 1500
-            )
+    fun updateMedia3Settings(speed: Float, skipSilence: Boolean, sampleRate: Int? = null) {
+        playbackSpeed = speed.coerceIn(0.75f, 1.5f)
+        skipSilenceEnabled = skipSilence
+        if (sampleRate != null && sampleRate > 0) {
+            sampleRateHz = sampleRate
         }
-        _state.value = EqualizerUiState(
-            isSupported = supported,
+        publishState()
+    }
+
+    fun resetToFlat() {
+        desiredPreset = EqualizerPreset.FLAT
+        currentLevelsMb.fill(0)
+        preampDb = 0f
+        bassBoostPercent = 0
+        syncProcessor()
+        publishState()
+    }
+
+    private fun syncProcessor() {
+        Media3EqualizerAudioProcessor.updateParameters(
             isEnabled = desiredEnabled,
-            selectedPreset = desiredPreset,
-            bands = bands
+            bandLevelsMb = currentLevelsMb.toList(),
+            preampDb = preampDb,
+            bassBoostPercent = bassBoostPercent
         )
     }
 
-    private fun defaultPlaceholderState(): EqualizerUiState {
-        val freqs = listOf(60, 230, 910, 3600, 14000)
+    private fun publishState() {
+        _state.value = buildUiState()
+    }
+
+    private fun buildUiState(): EqualizerUiState {
+        val bands = (0 until 5).map { idx ->
+            val hz = bandFreqs[idx]
+            EqualizerBandUi(
+                bandIndex = idx,
+                frequencyHz = hz,
+                frequencyLabel = formatFreq(hz),
+                levelMb = currentLevelsMb[idx],
+                minLevelMb = MIN_MB,
+                maxLevelMb = MAX_MB
+            )
+        }
         return EqualizerUiState(
             isSupported = true,
-            isEnabled = false,
-            selectedPreset = EqualizerPreset.ROAD_TRIP,
-            bands = freqs.mapIndexed { idx, hz ->
-                EqualizerBandUi(
-                    bandIndex = idx,
-                    frequencyLabel = formatFreq(hz),
-                    levelMb = EqualizerPreset.ROAD_TRIP.bandOffsetsMb[idx],
-                    minLevelMb = -1500,
-                    maxLevelMb = 1500
-                )
-            }
+            isEnabled = desiredEnabled,
+            selectedPreset = desiredPreset,
+            bands = bands,
+            preampDb = preampDb,
+            bassBoostPercent = bassBoostPercent,
+            playbackSpeed = playbackSpeed,
+            skipSilenceEnabled = skipSilenceEnabled,
+            audioSessionId = currentSessionId,
+            sampleRateHz = sampleRateHz
         )
     }
 
     private fun formatFreq(hz: Int): String =
-        if (hz >= 1000) "${hz / 1000}k" else "${hz}Hz"
-
-    fun release() {
-        runCatching { equalizer?.release() }
-        equalizer = null
-        currentSessionId = 0
-    }
+        if (hz >= 1000) {
+            val k = hz / 1000f
+            if (k % 1f == 0f) "${k.toInt()}kHz" else "${"%.1f".format(k)}kHz"
+        } else {
+            "${hz}Hz"
+        }
 }

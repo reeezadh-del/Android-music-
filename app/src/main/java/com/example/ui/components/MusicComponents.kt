@@ -260,10 +260,18 @@ fun TrackRowItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = formatDuration(track.durationMs),
+                    text = if (track.durationMs > 0L) {
+                        formatDuration(track.durationMs)
+                    } else {
+                        stringResource(R.string.online_live_badge)
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = OutfitFontFamily,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (track.durationMs > 0L) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.secondary
+                    }
                 )
             }
         }

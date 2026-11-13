@@ -62,8 +62,13 @@ fun CarModeScreen(
 ) {
     BackHandler(onBack = onExit)
 
+    val isLiveStream = durationMs <= 0L
     val safeDuration = durationMs.coerceAtLeast(1L)
-    val progress = (currentPositionMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
+    val progress = if (isLiveStream) {
+        if (isPlaying) 1f else 0f
+    } else {
+        (currentPositionMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
+    }
 
     Box(
         modifier = modifier
@@ -167,7 +172,11 @@ fun CarModeScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "${formatDuration(currentPositionMs)} / ${formatDuration(durationMs)}",
+                            text = if (isLiveStream) {
+                                "${stringResource(R.string.online_live_badge)} • ${formatDuration(currentPositionMs)}"
+                            } else {
+                                "${formatDuration(currentPositionMs)} / ${formatDuration(durationMs)}"
+                            },
                             style = MaterialTheme.typography.labelLarge,
                             fontFamily = OutfitFontFamily,
                             color = AutoTurquoise

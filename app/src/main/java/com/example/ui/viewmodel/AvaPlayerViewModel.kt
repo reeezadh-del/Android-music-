@@ -22,6 +22,10 @@ import com.example.data.model.EqualizerUiState
 import com.example.data.model.Playlist
 import com.example.data.model.RepeatModeOption
 import com.example.data.model.Track
+import com.example.data.remote.OnlineMusicRepository
+import com.example.data.remote.OnlineRadioCategory
+import com.example.data.remote.OnlineSourceMode
+import com.example.data.remote.OnlineTrackGenre
 import com.example.data.repository.MusicRepository
 import com.example.service.AvaMediaLibraryService
 import com.google.common.util.concurrent.ListenableFuture
@@ -41,6 +45,12 @@ enum class LibraryFilter(val labelFa: String) {
     IMPORTED("فایل‌های دستگاه")
 }
 
+sealed interface OnlineFeedUiState {
+    data object Loading : OnlineFeedUiState
+    data class Success(val tracks: List<Track>) : OnlineFeedUiState
+    data class Error(val message: String) : OnlineFeedUiState
+}
+
 data class PlaybackUiState(
     val currentTrack: Track? = null,
     val isPlaying: Boolean = false,
@@ -58,6 +68,7 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
     private val app = application as AvaPlayerApplication
     private val repository = app.musicRepository
     private val preferences = app.playbackPreferences
+    private val onlineRepository = OnlineMusicRepository()
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -152,8 +163,26 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
     private val _statusBannerMessage = MutableStateFlow<String?>(null)
     val statusBannerMessage: StateFlow<String?> = _statusBannerMessage
 
+    private val _onlineSourceMode = MutableStateFlow(OnlineSourceMode.TRACKS)
+    val onlineSourceMode: StateFlow<OnlineSourceMode> = _onlineSourceMode
+
+    private val _onlineGenre = MutableStateFlow(OnlineTrackGenre.TRENDING)
+    val onlineGenre: StateFlow<OnlineTrackGenre> = _onlineGenre
+
+    private val _onlineRadioCategory = MutableStateFlow(OnlineRadioCategory.PERSIAN)
+    val onlineRadioCategory: StateFlow<OnlineRadioCategory> = _onlineRadioCategory
+
+    private val _onlineSearchQuery = MutableStateFlow("")
+    val onlineSearchQuery: StateFlow<String> = _onlineSearchQuery
+
+    private val _onlineFeedState = MutableStateFlow<OnlineFeedUiState>(OnlineFeedUiState.Loading)
+    val onlineFeedState: StateFlow<OnlineFeedUiState> = _onlineFeedState
+
+    private var onlineFetchJob: Job? = null
+
     init {
         connectToMediaService()
+        loadOnlineFeed()
         viewModelScope.launch {
             allTracks.collect { tracks ->
                 syncPlayerMetadataWithTracks(tracks)
@@ -425,20 +454,78 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setEqualizerEnabled(enabled: Boolean) {
         EqualizerController.setEnabled(enabled)
-        viewModelScope.launch {
-            preferences.setEqualizerConfig(enabled, equalizerState.value.selectedPreset)
-        }
+        persistEqualizerState()
     }
 
     fun selectEqualizerPreset(preset: EqualizerPreset) {
         EqualizerController.applyPreset(preset)
-        viewModelScope.launch {
-            preferences.setEqualizerConfig(equalizerState.value.isEnabled, preset)
-        }
+        persistEqualizerState()
     }
 
     fun setEqualizerBand(bandIndex: Int, levelMb: Int) {
         EqualizerController.setBandLevel(bandIndex, levelMb)
+        persistEqualizerState()
+    }
+
+    fun setPreampDb(db: Float) {
+        EqualizerController.setPreampDb(db)
+        persistEqualizerState()
+    }
+
+    fun setBassBoostPercent(percent: Int) {
+        EqualizerController.setBassBoostPercent(percent)
+        persistEqualizerState()
+    }
+
+    fun resetEqualizer() {
+        EqualizerController.resetToFlat()
+        persistEqualizerState()
+        showBanner("اکولایزر به حالت طبیعی بازنشانی شد")
+    }
+
+    fun setMedia3PlaybackSpeed(speed: Float) {
+        val clamped = speed.coerceIn(0.75f, 1.5f)
+        mediaController?.setPlaybackSpeed(clamped)
+        EqualizerController.updateMedia3Settings(
+            speed = clamped,
+            skipSilence = equalizerState.value.skipSilenceEnabled
+        )
+        viewModelScope.launch {
+            preferences.setMedia3PlaybackSettings(clamped, equalizerState.value.skipSilenceEnabled)
+        }
+    }
+
+    fun setMedia3SkipSilence(enabled: Boolean) {
+        val controller = mediaController
+        if (controller != null) {
+            val args = Bundle().apply {
+                putBoolean(AvaMediaLibraryService.EXTRA_SKIP_SILENCE, enabled)
+            }
+            controller.sendCustomCommand(
+                SessionCommand(AvaMediaLibraryService.COMMAND_SET_SKIP_SILENCE, Bundle.EMPTY),
+                args
+            )
+        }
+        EqualizerController.updateMedia3Settings(
+            speed = equalizerState.value.playbackSpeed,
+            skipSilence = enabled
+        )
+        viewModelScope.launch {
+            preferences.setMedia3PlaybackSettings(equalizerState.value.playbackSpeed, enabled)
+        }
+    }
+
+    private fun persistEqualizerState() {
+        val snapshot = equalizerState.value
+        viewModelScope.launch {
+            preferences.setEqualizerState(
+                enabled = snapshot.isEnabled,
+                preset = snapshot.selectedPreset,
+                bandLevelsMb = snapshot.bands.map { it.levelMb },
+                preampDb = snapshot.preampDb,
+                bassBoostPercent = snapshot.bassBoostPercent
+            )
+        }
     }
 
     fun setSleepTimer(minutes: Int) {
@@ -459,6 +546,64 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun clearBanner() {
         _statusBannerMessage.value = null
+    }
+
+    fun selectOnlineMode(mode: OnlineSourceMode) {
+        if (_onlineSourceMode.value == mode) return
+        _onlineSourceMode.value = mode
+        loadOnlineFeed()
+    }
+
+    fun selectOnlineGenre(genre: OnlineTrackGenre) {
+        _onlineGenre.value = genre
+        _onlineSearchQuery.value = ""
+        loadOnlineFeed()
+    }
+
+    fun selectOnlineRadioCategory(category: OnlineRadioCategory) {
+        _onlineRadioCategory.value = category
+        _onlineSearchQuery.value = ""
+        loadOnlineFeed()
+    }
+
+    fun setOnlineSearchQuery(query: String) {
+        _onlineSearchQuery.value = query
+    }
+
+    fun loadOnlineFeed() {
+        onlineFetchJob?.cancel()
+        onlineFetchJob = viewModelScope.launch {
+            _onlineFeedState.value = OnlineFeedUiState.Loading
+            val query = _onlineSearchQuery.value.trim()
+            val result = when (_onlineSourceMode.value) {
+                OnlineSourceMode.TRACKS -> {
+                    if (query.isNotEmpty()) {
+                        onlineRepository.searchWebTracks(query)
+                    } else {
+                        onlineRepository.fetchTrendingTracks(_onlineGenre.value)
+                    }
+                }
+                OnlineSourceMode.LIVE_RADIO -> {
+                    onlineRepository.fetchLiveRadioStations(_onlineRadioCategory.value, query)
+                }
+            }
+            _onlineFeedState.value = result.fold(
+                onSuccess = { OnlineFeedUiState.Success(it) },
+                onFailure = { err ->
+                    OnlineFeedUiState.Error(
+                        err.localizedMessage?.takeIf { it.isNotBlank() }
+                            ?: "اتصال اینترنت یا دسترسی به شبکه آزاد را بررسی کنید."
+                    )
+                }
+            )
+        }
+    }
+
+    fun saveOnlineTrackToLibrary(track: Track) {
+        viewModelScope.launch {
+            repository.saveOnlineTrack(track)
+            showBanner("«${track.title}» در کتابخانه و اندروید اتو ذخیره شد")
+        }
     }
 
     private fun showBanner(message: String) {

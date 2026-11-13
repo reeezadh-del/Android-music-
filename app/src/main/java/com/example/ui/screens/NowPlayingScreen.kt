@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -102,6 +103,7 @@ fun NowPlayingScreen(
     onToggleFavorite: () -> Unit,
     onSelectQueueItem: (Int) -> Unit,
     onOpenCarMode: () -> Unit,
+    onOpenEqualizer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onCollapse)
@@ -110,11 +112,12 @@ fun NowPlayingScreen(
     var isDraggingSlider by remember { mutableStateOf(false) }
     var sliderDragPos by remember { mutableFloatStateOf(0f) }
 
+    val isLiveStream = durationMs <= 0L
     val safeDuration = durationMs.coerceAtLeast(1L)
-    val displayProgress = if (isDraggingSlider) {
-        sliderDragPos
-    } else {
-        (currentPositionMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
+    val displayProgress = when {
+        isLiveStream -> if (isPlaying) 1f else 0f
+        isDraggingSlider -> sliderDragPos
+        else -> (currentPositionMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
     }
 
     val accentColor = Color(track.accentColorHex)
@@ -265,13 +268,18 @@ fun NowPlayingScreen(
                 Column {
                     Slider(
                         value = displayProgress,
+                        enabled = !isLiveStream,
                         onValueChange = {
-                            isDraggingSlider = true
-                            sliderDragPos = it
+                            if (!isLiveStream) {
+                                isDraggingSlider = true
+                                sliderDragPos = it
+                            }
                         },
                         onValueChangeFinished = {
-                            onSeekTo((sliderDragPos * safeDuration).toLong())
-                            isDraggingSlider = false
+                            if (!isLiveStream) {
+                                onSeekTo((sliderDragPos * safeDuration).toLong())
+                                isDraggingSlider = false
+                            }
                         },
                         colors = SliderDefaults.colors(
                             thumbColor = MaterialTheme.colorScheme.primary,
@@ -298,10 +306,14 @@ fun NowPlayingScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = formatDuration(durationMs),
+                            text = if (isLiveStream) {
+                                stringResource(R.string.online_live_badge)
+                            } else {
+                                formatDuration(durationMs)
+                            },
                             style = MaterialTheme.typography.labelMedium,
-                            fontFamily = OutfitFontFamily,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontFamily = if (isLiveStream) MaterialTheme.typography.labelMedium.fontFamily else OutfitFontFamily,
+                            color = if (isLiveStream) AutoTurquoise else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -392,31 +404,68 @@ fun NowPlayingScreen(
                     }
                 }
 
-                // Queue Button Bar
-                Surface(
-                    onClick = { showQueueSheet = true },
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("now_playing_queue_button")
+                // Queue & Equalizer Shortcut Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        onClick = { showQueueSheet = true },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("now_playing_queue_button")
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "${stringResource(R.string.queue_title)} (${queueTracks.size})",
-                            style = MaterialTheme.typography.titleSmall
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${stringResource(R.string.queue_title)} (${queueTracks.size})",
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Surface(
+                        onClick = onOpenEqualizer,
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("now_playing_equalizer_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Equalizer,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.nav_equalizer),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -482,10 +531,14 @@ fun NowPlayingScreen(
                                 )
                             }
                             Text(
-                                text = formatDuration(item.durationMs),
+                                text = if (item.durationMs > 0L) {
+                                    formatDuration(item.durationMs)
+                                } else {
+                                    stringResource(R.string.online_live_badge)
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 fontFamily = OutfitFontFamily,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (item.durationMs > 0L) MaterialTheme.colorScheme.onSurfaceVariant else AutoTurquoise
                             )
                         }
                     }

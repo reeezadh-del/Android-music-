@@ -11,7 +11,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -24,6 +27,7 @@ import androidx.media3.session.SessionResult
 import com.example.MainActivity
 import com.example.R
 import com.example.audio.EqualizerController
+import com.example.audio.Media3EqualizerAudioProcessor
 import com.example.data.local.PlaybackPreferences
 import com.example.data.model.RepeatModeOption
 import com.example.data.model.Track
@@ -67,7 +71,21 @@ class AvaMediaLibraryService : MediaLibraryService() {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
-        player = ExoPlayer.Builder(this)
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: android.content.Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(Media3EqualizerAudioProcessor))
+                    .build()
+            }
+        }
+
+        player = ExoPlayer.Builder(this, renderersFactory)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             .setHandleAudioBecomingNoisy(true)
             .build()
@@ -131,8 +149,17 @@ class AvaMediaLibraryService : MediaLibraryService() {
         serviceScope.launch {
             repository.ensureSeeded()
             val stored = preferences.getSnapshot()
-            EqualizerController.setEnabled(stored.equalizerEnabled)
-            EqualizerController.applyPreset(stored.equalizerPreset)
+            EqualizerController.restoreSavedConfig(
+                enabled = stored.equalizerEnabled,
+                preset = stored.equalizerPreset,
+                bandLevelsMb = stored.customBandLevelsMb,
+                savedPreampDb = stored.preampDb,
+                savedBassBoostPercent = stored.bassBoostPercent,
+                savedPlaybackSpeed = stored.playbackSpeed,
+                savedSkipSilence = stored.skipSilenceEnabled
+            )
+            player.setPlaybackSpeed(stored.playbackSpeed)
+            player.skipSilenceEnabled = stored.skipSilenceEnabled
             player.shuffleModeEnabled = stored.shuffleEnabled
             player.repeatMode = when (stored.repeatMode) {
                 RepeatModeOption.ONE -> Player.REPEAT_MODE_ONE
@@ -150,6 +177,16 @@ class AvaMediaLibraryService : MediaLibraryService() {
                 }
             }
             updateSessionMediaButtonPreferences()
+        }
+
+        serviceScope.launch {
+            Media3EqualizerAudioProcessor.sampleRateFlow.collect { sampleRate ->
+                EqualizerController.updateMedia3Settings(
+                    speed = player.playbackParameters.speed,
+                    skipSilence = player.skipSilenceEnabled,
+                    sampleRate = sampleRate
+                )
+            }
         }
 
         // Notify Android Auto / connected browsers when library changes
@@ -182,7 +219,6 @@ class AvaMediaLibraryService : MediaLibraryService() {
         saveCurrentPlaybackPosition()
         sleepTimerJob?.cancel()
         positionPersistJob?.cancel()
-        EqualizerController.release()
         mediaLibrarySession.release()
         player.release()
         serviceScope.cancel()
@@ -255,6 +291,7 @@ class AvaMediaLibraryService : MediaLibraryService() {
                 .add(SessionCommand(COMMAND_TOGGLE_FAVORITE, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_TOGGLE_SHUFFLE, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_SET_SLEEP_TIMER, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_SET_SKIP_SILENCE, Bundle.EMPTY))
                 .build()
 
             return if (session.isMediaNotificationController(controller) ||
@@ -296,6 +333,16 @@ class AvaMediaLibraryService : MediaLibraryService() {
                 COMMAND_SET_SLEEP_TIMER -> {
                     val minutes = args.getInt(EXTRA_SLEEP_MINUTES, 0)
                     startSleepTimer(minutes)
+                    Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+
+                COMMAND_SET_SKIP_SILENCE -> {
+                    val enabled = args.getBoolean(EXTRA_SKIP_SILENCE, false)
+                    player.skipSilenceEnabled = enabled
+                    EqualizerController.updateMedia3Settings(
+                        speed = player.playbackParameters.speed,
+                        skipSilence = enabled
+                    )
                     Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
 
@@ -600,8 +647,10 @@ class AvaMediaLibraryService : MediaLibraryService() {
         const val COMMAND_TOGGLE_FAVORITE = "com.aistudio.avaplayer.TOGGLE_FAVORITE"
         const val COMMAND_TOGGLE_SHUFFLE = "com.aistudio.avaplayer.TOGGLE_SHUFFLE"
         const val COMMAND_SET_SLEEP_TIMER = "com.aistudio.avaplayer.SET_SLEEP_TIMER"
+        const val COMMAND_SET_SKIP_SILENCE = "com.aistudio.avaplayer.SET_SKIP_SILENCE"
         const val EXTRA_TRACK_ID = "extra_track_id"
         const val EXTRA_SLEEP_MINUTES = "extra_sleep_minutes"
+        const val EXTRA_SKIP_SILENCE = "extra_skip_silence"
 
         private const val CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED"
         private const val CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"
