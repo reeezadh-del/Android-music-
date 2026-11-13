@@ -6,7 +6,6 @@ import com.example.audio.EqualizerController
 import com.example.audio.Media3EqualizerAudioProcessor
 import com.example.data.model.EqualizerPreset
 import com.example.data.remote.OnlineMusicRepository
-import com.example.data.remote.OnlineRadioCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -100,36 +99,48 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun `online music repository parses live radio stations and deduplicates stream URLs`() {
+    fun `online music repository parses Iranian WordPress posts and RSS feeds`() {
         val repository = OnlineMusicRepository()
-        val sampleJson = """
+        val wpJson = """
             [
               {
-                "stationuuid": "st-1",
-                "name": "Tehran Chill FM",
-                "url_resolved": "https://stream.example/chill.mp3",
-                "url": "http://fallback.example/chill.mp3",
-                "favicon": "https://img.example/radio.png",
-                "tags": "chillout,persian",
-                "country": "Iran",
-                "bitrate": 128
+                "id": 4512,
+                "link": "https://music-fa.com/post-4512",
+                "title": { "rendered": "دانلود آهنگ جدید محسن چاوشی به نام شب بارانی" },
+                "content": {
+                  "rendered": "<p><img src=\"https://music-fa.com/wp-content/uploads/cover.jpg\" /><a href=\"https://dls.music-fa.com/song-320.mp3\">320</a><a href=\"https://dls.music-fa.com/song-128.mp3\">128</a></p>"
+                }
               },
               {
-                "stationuuid": "st-dup",
-                "name": "Duplicate Chill FM",
-                "url_resolved": "https://stream.example/chill.mp3",
-                "bitrate": 128
+                "id": 4513,
+                "link": "https://music-fa.com/post-no-mp3",
+                "title": { "rendered": "پست بدون فایل صوتی" },
+                "content": { "rendered": "<p>متن خبر</p>" }
               }
             ]
         """.trimIndent()
 
-        val stations = repository.parseRadioStationsJson(OnlineRadioCategory.PERSIAN, sampleJson)
-        assertEquals(1, stations.size)
-        val station = stations.first()
-        assertEquals("radio_st-1", station.id)
-        assertEquals("Tehran Chill FM", station.title)
-        assertEquals(0L, station.durationMs)
-        assertEquals("https://stream.example/chill.mp3", station.mediaUri)
-        assertTrue(station.artist.contains("128kbps"))
+        val wpTracks = repository.parseWpPostsJson("موزیک‌فا", wpJson)
+        assertEquals(1, wpTracks.size)
+        val first = wpTracks.first()
+        assertEquals("شب بارانی", first.title)
+        assertTrue(first.artist.contains("محسن چاوشی"))
+        assertEquals("https://dls.music-fa.com/song-128.mp3", first.mediaUri)
+        assertEquals("https://music-fa.com/wp-content/uploads/cover.jpg", first.artworkUri)
+
+        val rssXml = """
+            <rss><channel>
+              <item>
+                <title><![CDATA[دانلود آهنگ رضا بهرام – گل عشق]]></title>
+                <description><![CDATA[<img src="https://rozmusic.com/cover.webp"/><a href="https://dl.rozmusic.com/gol-320.mp3">Download</a>]]></description>
+              </item>
+            </channel></rss>
+        """.trimIndent()
+
+        val rssTracks = repository.parseIranianRssFeed("رزموزیک", rssXml)
+        assertEquals(1, rssTracks.size)
+        assertEquals("گل عشق", rssTracks.first().title)
+        assertTrue(rssTracks.first().artist.contains("رضا بهرام"))
+        assertEquals("https://dl.rozmusic.com/gol-320.mp3", rssTracks.first().mediaUri)
     }
 }

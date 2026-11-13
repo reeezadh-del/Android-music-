@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">آوا پلیر</string>
+    <string name="app_name">melodi</string>
     <string name="nav_home">خانه</string>
     <string name="nav_online">آنلاین</string>
     <string name="nav_library">کتابخانه</string>
@@ -8,25 +8,26 @@
     <string name="nav_auto">اتو</string>
 
     <string name="online_title">موزیک آنلاین</string>
-    <string name="online_subtitle">پخش مستقیم جدیدترین موزیک‌های وب بدون نیاز به سرور</string>
-    <string name="online_mode_tracks">آهنگ‌های جدید وب</string>
-    <string name="online_mode_radio">رادیو آنلاین زنده</string>
-    <string name="online_search_hint">جستجوی آنلاین آهنگ یا هنرمند در سطح وب…</string>
-    <string name="online_loading">در حال دریافت موزیک‌های جدید از وب…</string>
+    <string name="online_subtitle">دریافت و پخش مستقیم موزیک‌های جدید از سایت‌های ایرانی و وب بدون سرور</string>
+    <string name="online_mode_iranian">سایت‌های ایرانی</string>
+    <string name="online_mode_global">موزیک جهانی</string>
+    <string name="online_search_hint">جستجوی نام آهنگ یا خواننده…</string>
+    <string name="online_loading">در حال دریافت جدیدترین آهنگ‌ها…</string>
     <string name="online_error_title">خطا در دریافت لیست موزیک‌ها</string>
     <string name="online_retry">تلاش مجدد</string>
     <string name="online_save_to_library">ذخیره در کتابخانه</string>
-    <string name="online_live_badge">پخش زنده</string>
+    <string name="online_live_badge">استریم آنلاین</string>
 
     <string name="hero_badge">آماده اتصال به خودرو</string>
-    <string name="hero_title">میکس رانندگی شبانه</string>
-    <string name="hero_subtitle">تجربه صدای بی‌نقص در گوشی و نمایشگر خودرو</string>
-    <string name="action_play_driving_mix">پخش میکس رانندگی</string>
+    <string name="hero_title">موسیقی‌های دستگاه شما</string>
+    <string name="hero_subtitle">پخش خودکار آهنگ‌های حافظه گوشی در موبایل و نمایشگر اندروید اتو</string>
+    <string name="action_play_driving_mix">پخش لیست دستگاه</string>
     <string name="action_car_mode">حالت رانندگی</string>
-    <string name="action_import_audio">افزودن آهنگ از دستگاه</string>
+    <string name="action_import_audio">افزودن دستی فایل صوتی</string>
+    <string name="action_scan_device_music">اسکن موزیک‌های دستگاه</string>
 
-    <string name="section_featured_albums">آلبوم‌های برگزیده</string>
-    <string name="section_quick_tracks">پخش سریع</string>
+    <string name="section_featured_albums">آلبوم‌های دستگاه</string>
+    <string name="section_quick_tracks">لیست پخش دستگاه</string>
     <string name="section_recent_plays">آهنگ‌های اخیر</string>
 
     <string name="search_hint">جستجوی آهنگ، هنرمند یا آلبوم…</string>
@@ -36,8 +37,10 @@
 
     <string name="empty_favorites_title">هنوز آهنگ محبوبی ندارید</string>
     <string name="empty_favorites_subtitle">روی آیکون قلب کنار هر آهنگ بزنید تا در این بخش و اندروید اتو نمایش داده شود.</string>
+    <string name="empty_device_music_title">هنوز آهنگی در لیست پخش نیست</string>
+    <string name="empty_device_music_subtitle">برای افزودن خودکار تمام موسیقی‌های حافظه گوشی به لیست پخش، دکمه اسکن موزیک‌های دستگاه را بزنید.</string>
     <string name="empty_search_title">نتیجه‌ای پیدا نشد</string>
-    <string name="empty_search_subtitle">عبارت دیگری جستجو کنید یا آهنگ جدیدی از حافظه دستگاه اضافه نمایید.</string>
+    <string name="empty_search_subtitle">عبارت دیگری جستجو کنید یا از حافظه دستگاه آهنگ اضافه نمایید.</string>
     <string name="empty_playlist_title">پلی‌لیست خالی است</string>
     <string name="empty_playlist_subtitle">از کتابخانه، آهنگ‌های دلخواه خود را به این پلی‌لیست اضافه کنید.</string>
 

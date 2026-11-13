@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "AvaPlayer"
+rootProject.name = "melodi"
 
 include(":app")

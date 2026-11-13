@@ -107,6 +107,18 @@ interface AvaDao {
     @Query("DELETE FROM tracks WHERE id = :trackId AND isImported = 1")
     suspend fun deleteImportedTrack(trackId: String)
 
+    @Query("DELETE FROM tracks WHERE id = :trackId")
+    suspend fun deleteTrackById(trackId: String)
+
+    @Query("DELETE FROM playlist_tracks WHERE trackId = :trackId")
+    suspend fun deleteTrackFromAllPlaylists(trackId: String)
+
+    @Query("DELETE FROM tracks WHERE id LIKE 'seed_%'")
+    suspend fun deleteDefaultSeedTracks()
+
+    @Query("DELETE FROM playlist_tracks WHERE trackId LIKE 'seed_%'")
+    suspend fun deleteDefaultSeedPlaylistRefs()
+
     @Transaction
     @Query("SELECT * FROM playlists ORDER BY isBuiltIn DESC, createdAt ASC")
     fun observePlaylistsWithTracks(): Flow<List<PlaylistWithTracks>>
@@ -132,6 +144,9 @@ interface AvaDao {
 
     @Query("DELETE FROM playlists WHERE id = :playlistId AND isBuiltIn = 0")
     suspend fun deleteCustomPlaylist(playlistId: String)
+
+    @Query("DELETE FROM playlists WHERE id = :playlistId")
+    suspend fun deletePlaylistById(playlistId: String)
 }
 
 @Database(

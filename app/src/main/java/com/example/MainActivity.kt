@@ -149,30 +149,68 @@ fun AvaPlayerApp(
     val sleepTimerMinutes by viewModel.sleepTimerRemainingMinutes.collectAsStateWithLifecycle()
     val statusBanner by viewModel.statusBannerMessage.collectAsStateWithLifecycle()
     val onlineFeedState by viewModel.onlineFeedState.collectAsStateWithLifecycle()
-    val onlineSourceMode by viewModel.onlineSourceMode.collectAsStateWithLifecycle()
+    val onlineRegion by viewModel.onlineRegion.collectAsStateWithLifecycle()
+    val iranianSiteFilter by viewModel.iranianSiteFilter.collectAsStateWithLifecycle()
     val onlineGenre by viewModel.onlineGenre.collectAsStateWithLifecycle()
-    val onlineRadioCategory by viewModel.onlineRadioCategory.collectAsStateWithLifecycle()
     val onlineSearchQuery by viewModel.onlineSearchQuery.collectAsStateWithLifecycle()
+    val isScanningDeviceMusic by viewModel.isScanningDeviceMusic.collectAsStateWithLifecycle()
 
     var isNowPlayingOpen by rememberSaveable { mutableStateOf(false) }
     var isCarModeOpen by rememberSaveable { mutableStateOf(false) }
     var trackForPlaylistSheet by remember { mutableStateOf<Track?>(null) }
     var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
 
-    // Graceful runtime notification permission request on Android 13+ for MediaStyle notification
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { /* Playback works regardless; notification shows if granted */ }
-    )
-    LaunchedEffect(Unit) {
+    val audioPermission = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+    }
+
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { results ->
+            if (results[audioPermission] == true) {
+                viewModel.scanDeviceMusic(showBannerOnResult = true)
             }
+        }
+    )
+
+    val triggerDeviceMusicScan: () -> Unit = {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            audioPermission
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            viewModel.scanDeviceMusic(showBannerOnResult = true)
+        } else {
+            permissionsLauncher.launch(arrayOf(audioPermission))
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val audioGranted = ContextCompat.checkSelfPermission(
+            context,
+            audioPermission
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (audioGranted) {
+            viewModel.scanDeviceMusic(showBannerOnResult = false)
+        }
+
+        val toRequest = buildList {
+            if (!audioGranted) add(audioPermission)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val notifGranted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!notifGranted) add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        if (toRequest.isNotEmpty()) {
+            permissionsLauncher.launch(toRequest.toTypedArray())
         }
     }
 
@@ -352,8 +390,10 @@ fun AvaPlayerApp(
                                     albums = albums,
                                     currentTrackId = activeTrack?.id,
                                     isPlaying = playbackState.isPlaying,
+                                    isScanningDeviceMusic = isScanningDeviceMusic,
                                     onPlayDrivingMix = viewModel::playDrivingMix,
                                     onOpenCarMode = { isCarModeOpen = true },
+                                    onScanDeviceMusic = triggerDeviceMusicScan,
                                     onImportAudio = {
                                         audioPickerLauncher.launch(arrayOf("audio/*"))
                                     },
@@ -372,16 +412,16 @@ fun AvaPlayerApp(
                                 }
                                 OnlineMusicScreen(
                                     feedState = onlineFeedState,
-                                    sourceMode = onlineSourceMode,
+                                    sourceRegion = onlineRegion,
+                                    selectedIranianSite = iranianSiteFilter,
                                     selectedGenre = onlineGenre,
-                                    selectedRadioCategory = onlineRadioCategory,
                                     searchQuery = onlineSearchQuery,
                                     savedTrackIds = savedIds,
                                     currentTrackId = activeTrack?.id,
                                     isPlaying = playbackState.isPlaying,
-                                    onSelectMode = viewModel::selectOnlineMode,
+                                    onSelectRegion = viewModel::selectOnlineRegion,
+                                    onSelectIranianSite = viewModel::selectIranianSiteFilter,
                                     onSelectGenre = viewModel::selectOnlineGenre,
-                                    onSelectRadioCategory = viewModel::selectOnlineRadioCategory,
                                     onSearchQueryChange = viewModel::setOnlineSearchQuery,
                                     onSubmitSearch = viewModel::loadOnlineFeed,
                                     onRefresh = viewModel::loadOnlineFeed,
@@ -400,6 +440,7 @@ fun AvaPlayerApp(
                                     isPlaying = playbackState.isPlaying,
                                     onSearchQueryChange = viewModel::setSearchQuery,
                                     onFilterSelect = viewModel::setLibraryFilter,
+                                    onScanDeviceMusic = triggerDeviceMusicScan,
                                     onImportAudio = {
                                         audioPickerLauncher.launch(arrayOf("audio/*"))
                                     },

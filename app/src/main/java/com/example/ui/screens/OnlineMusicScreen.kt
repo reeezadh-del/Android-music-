@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -28,9 +27,9 @@ import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
@@ -61,8 +60,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.Track
-import com.example.data.remote.OnlineRadioCategory
-import com.example.data.remote.OnlineSourceMode
+import com.example.data.remote.IranianMusicSiteFilter
+import com.example.data.remote.OnlineSourceRegion
 import com.example.data.remote.OnlineTrackGenre
 import com.example.ui.components.AlbumArtwork
 import com.example.ui.components.AnimatedEqualizerBars
@@ -74,16 +73,16 @@ import com.example.ui.viewmodel.OnlineFeedUiState
 @Composable
 fun OnlineMusicScreen(
     feedState: OnlineFeedUiState,
-    sourceMode: OnlineSourceMode,
+    sourceRegion: OnlineSourceRegion,
+    selectedIranianSite: IranianMusicSiteFilter,
     selectedGenre: OnlineTrackGenre,
-    selectedRadioCategory: OnlineRadioCategory,
     searchQuery: String,
     savedTrackIds: Set<String>,
     currentTrackId: String?,
     isPlaying: Boolean,
-    onSelectMode: (OnlineSourceMode) -> Unit,
+    onSelectRegion: (OnlineSourceRegion) -> Unit,
+    onSelectIranianSite: (IranianMusicSiteFilter) -> Unit,
     onSelectGenre: (OnlineTrackGenre) -> Unit,
-    onSelectRadioCategory: (OnlineRadioCategory) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSubmitSearch: () -> Unit,
     onRefresh: () -> Unit,
@@ -132,9 +131,12 @@ fun OnlineMusicScreen(
                                 modifier = Modifier.size(13.dp)
                             )
                             Text(
-                                text = "Web P2P",
+                                text = if (sourceRegion == OnlineSourceRegion.IRANIAN_SITES) {
+                                    "سایت‌های ایرانی"
+                                } else {
+                                    "Web P2P"
+                                },
                                 style = MaterialTheme.typography.labelSmall,
-                                fontFamily = OutfitFontFamily,
                                 color = AutoTurquoise
                             )
                         }
@@ -164,7 +166,7 @@ fun OnlineMusicScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Mode Switcher (New Web Tracks vs Live Online Radio)
+        // Region Filter Switcher (Iranian Sites vs Global Web Music)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -173,10 +175,10 @@ fun OnlineMusicScreen(
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            OnlineSourceMode.entries.forEach { mode ->
-                val selected = mode == sourceMode
+            OnlineSourceRegion.entries.forEach { region ->
+                val selected = region == sourceRegion
                 Surface(
-                    onClick = { onSelectMode(mode) },
+                    onClick = { onSelectRegion(region) },
                     shape = RoundedCornerShape(12.dp),
                     color = if (selected) {
                         MaterialTheme.colorScheme.primary
@@ -186,17 +188,17 @@ fun OnlineMusicScreen(
                     modifier = Modifier
                         .weight(1f)
                         .height(42.dp)
-                        .testTag("online_mode_${mode.name}")
+                        .testTag("online_region_${region.name}")
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (mode == OnlineSourceMode.TRACKS) {
-                                Icons.Rounded.MusicNote
+                            imageVector = if (region == OnlineSourceRegion.IRANIAN_SITES) {
+                                Icons.Rounded.Language
                             } else {
-                                Icons.Rounded.Radio
+                                Icons.Rounded.MusicNote
                             },
                             contentDescription = null,
                             tint = if (selected) {
@@ -208,7 +210,7 @@ fun OnlineMusicScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = mode.labelFa,
+                            text = region.labelFa,
                             style = MaterialTheme.typography.labelLarge,
                             color = if (selected) {
                                 MaterialTheme.colorScheme.onPrimary
@@ -270,8 +272,23 @@ fun OnlineMusicScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Genre / Station Category Chips
-        if (sourceMode == OnlineSourceMode.TRACKS) {
+        // Site Filter Chips (Iranian Sites) or Global Genre Chips
+        if (sourceRegion == OnlineSourceRegion.IRANIAN_SITES) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(IranianMusicSiteFilter.entries) { site ->
+                    FilterChip(
+                        selected = site == selectedIranianSite,
+                        onClick = { onSelectIranianSite(site) },
+                        label = { Text(site.labelFa) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AutoTurquoise.copy(alpha = 0.22f),
+                            selectedLabelColor = AutoTurquoise
+                        ),
+                        modifier = Modifier.testTag("online_ir_site_${site.name}")
+                    )
+                }
+            }
+        } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(OnlineTrackGenre.entries) { genre ->
                     FilterChip(
@@ -283,21 +300,6 @@ fun OnlineMusicScreen(
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                         ),
                         modifier = Modifier.testTag("online_genre_${genre.name}")
-                    )
-                }
-            }
-        } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(OnlineRadioCategory.entries) { category ->
-                    FilterChip(
-                        selected = category == selectedRadioCategory && searchQuery.isBlank(),
-                        onClick = { onSelectRadioCategory(category) },
-                        label = { Text(category.labelFa) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = AutoTurquoise.copy(alpha = 0.22f),
-                            selectedLabelColor = AutoTurquoise
-                        ),
-                        modifier = Modifier.testTag("online_radio_${category.name}")
                     )
                 }
             }
@@ -380,7 +382,7 @@ fun OnlineMusicScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "عبارت دیگری جستجو کنید یا دسته‌بندی را تغییر دهید.",
+                            text = "عبارت دیگری جستجو کنید یا فیلتر سایت/سبک را تغییر دهید.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -400,7 +402,6 @@ fun OnlineMusicScreen(
                                 isCurrent = isCurrent,
                                 isPlaying = isPlaying && isCurrent,
                                 isSaved = isSaved,
-                                isLiveRadio = track.durationMs == 0L,
                                 onPlayClick = { onPlayTrack(track, feedState.tracks) },
                                 onPlayNext = { onPlayNext(track) },
                                 onSaveToLibrary = { onSaveToLibrary(track) }
@@ -419,7 +420,6 @@ private fun OnlineTrackCard(
     isCurrent: Boolean,
     isPlaying: Boolean,
     isSaved: Boolean,
-    isLiveRadio: Boolean,
     onPlayClick: () -> Unit,
     onPlayNext: () -> Unit,
     onSaveToLibrary: () -> Unit
@@ -500,25 +500,26 @@ private fun OnlineTrackCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (isLiveRadio) {
-                    Surface(
-                        color = Color(0xFFFF3D5A).copy(alpha = 0.18f),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.online_live_badge),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFF6B81),
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                } else if (track.durationMs > 0L) {
+                if (track.durationMs > 0L) {
                     Text(
                         text = "• ${formatDuration(track.durationMs)}",
                         style = MaterialTheme.typography.labelMedium,
                         fontFamily = OutfitFontFamily,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                } else {
+                    Surface(
+                        color = AutoTurquoise.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "MP3",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = OutfitFontFamily,
+                            color = AutoTurquoise,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
         }
@@ -536,19 +537,17 @@ private fun OnlineTrackCard(
             )
         }
 
-        if (!isLiveRadio) {
-            IconButton(
-                onClick = onSaveToLibrary,
-                modifier = Modifier
-                    .minimumInteractiveComponentSize()
-                    .testTag("online_save_${track.id}")
-            ) {
-                Icon(
-                    imageVector = if (isSaved) Icons.Rounded.BookmarkAdded else Icons.Rounded.BookmarkAdd,
-                    contentDescription = stringResource(R.string.online_save_to_library),
-                    tint = if (isSaved) AutoTurquoise else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        IconButton(
+            onClick = onSaveToLibrary,
+            modifier = Modifier
+                .minimumInteractiveComponentSize()
+                .testTag("online_save_${track.id}")
+        ) {
+            Icon(
+                imageVector = if (isSaved) Icons.Rounded.BookmarkAdded else Icons.Rounded.BookmarkAdd,
+                contentDescription = stringResource(R.string.online_save_to_library),
+                tint = if (isSaved) AutoTurquoise else MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

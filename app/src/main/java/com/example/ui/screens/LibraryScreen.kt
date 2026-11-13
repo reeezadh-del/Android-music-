@@ -20,6 +20,8 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.Button
@@ -53,6 +55,7 @@ fun LibraryScreen(
     isPlaying: Boolean,
     onSearchQueryChange: (String) -> Unit,
     onFilterSelect: (LibraryFilter) -> Unit,
+    onScanDeviceMusic: () -> Unit,
     onImportAudio: () -> Unit,
     onOpenPlaylists: () -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
@@ -78,7 +81,17 @@ fun LibraryScreen(
                 text = stringResource(R.string.nav_library),
                 style = MaterialTheme.typography.headlineMedium
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                IconButton(
+                    onClick = onScanDeviceMusic,
+                    modifier = Modifier.testTag("library_scan_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = stringResource(R.string.action_scan_device_music),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
                 OutlinedButton(
                     onClick = onOpenPlaylists,
                     shape = RoundedCornerShape(14.dp),
@@ -164,7 +177,9 @@ fun LibraryScreen(
 
         if (tracks.isEmpty()) {
             BoxEmptyLibraryState(
-                isFavorites = activeFilter == LibraryFilter.FAVORITES && searchQuery.isBlank()
+                isFavorites = activeFilter == LibraryFilter.FAVORITES && searchQuery.isBlank(),
+                isEmptyLibrary = searchQuery.isBlank() && activeFilter != LibraryFilter.FAVORITES,
+                onScanDeviceMusic = onScanDeviceMusic
             )
         } else {
             LazyColumn(
@@ -190,7 +205,11 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun BoxEmptyLibraryState(isFavorites: Boolean) {
+private fun BoxEmptyLibraryState(
+    isFavorites: Boolean,
+    isEmptyLibrary: Boolean,
+    onScanDeviceMusic: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -199,7 +218,11 @@ private fun BoxEmptyLibraryState(isFavorites: Boolean) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
-            imageVector = if (isFavorites) Icons.Rounded.FavoriteBorder else Icons.Rounded.SearchOff,
+            imageVector = when {
+                isFavorites -> Icons.Rounded.FavoriteBorder
+                isEmptyLibrary -> Icons.Rounded.MusicNote
+                else -> Icons.Rounded.SearchOff
+            },
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
             modifier = Modifier.size(54.dp)
@@ -207,7 +230,11 @@ private fun BoxEmptyLibraryState(isFavorites: Boolean) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = stringResource(
-                if (isFavorites) R.string.empty_favorites_title else R.string.empty_search_title
+                when {
+                    isFavorites -> R.string.empty_favorites_title
+                    isEmptyLibrary -> R.string.empty_device_music_title
+                    else -> R.string.empty_search_title
+                }
             ),
             style = MaterialTheme.typography.titleLarge,
             textAlign = TextAlign.Center
@@ -215,11 +242,27 @@ private fun BoxEmptyLibraryState(isFavorites: Boolean) {
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = stringResource(
-                if (isFavorites) R.string.empty_favorites_subtitle else R.string.empty_search_subtitle
+                when {
+                    isFavorites -> R.string.empty_favorites_subtitle
+                    isEmptyLibrary -> R.string.empty_device_music_subtitle
+                    else -> R.string.empty_search_subtitle
+                }
             ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+        if (isEmptyLibrary) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onScanDeviceMusic,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.testTag("library_empty_scan_button")
+            ) {
+                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(stringResource(R.string.action_scan_device_music))
+            }
+        }
     }
 }

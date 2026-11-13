@@ -22,9 +22,9 @@ import com.example.data.model.EqualizerUiState
 import com.example.data.model.Playlist
 import com.example.data.model.RepeatModeOption
 import com.example.data.model.Track
+import com.example.data.remote.IranianMusicSiteFilter
 import com.example.data.remote.OnlineMusicRepository
-import com.example.data.remote.OnlineRadioCategory
-import com.example.data.remote.OnlineSourceMode
+import com.example.data.remote.OnlineSourceRegion
 import com.example.data.remote.OnlineTrackGenre
 import com.example.data.repository.MusicRepository
 import com.example.service.AvaMediaLibraryService
@@ -163,20 +163,23 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
     private val _statusBannerMessage = MutableStateFlow<String?>(null)
     val statusBannerMessage: StateFlow<String?> = _statusBannerMessage
 
-    private val _onlineSourceMode = MutableStateFlow(OnlineSourceMode.TRACKS)
-    val onlineSourceMode: StateFlow<OnlineSourceMode> = _onlineSourceMode
+    private val _onlineRegion = MutableStateFlow(OnlineSourceRegion.IRANIAN_SITES)
+    val onlineRegion: StateFlow<OnlineSourceRegion> = _onlineRegion
+
+    private val _iranianSiteFilter = MutableStateFlow(IranianMusicSiteFilter.ALL)
+    val iranianSiteFilter: StateFlow<IranianMusicSiteFilter> = _iranianSiteFilter
 
     private val _onlineGenre = MutableStateFlow(OnlineTrackGenre.TRENDING)
     val onlineGenre: StateFlow<OnlineTrackGenre> = _onlineGenre
-
-    private val _onlineRadioCategory = MutableStateFlow(OnlineRadioCategory.PERSIAN)
-    val onlineRadioCategory: StateFlow<OnlineRadioCategory> = _onlineRadioCategory
 
     private val _onlineSearchQuery = MutableStateFlow("")
     val onlineSearchQuery: StateFlow<String> = _onlineSearchQuery
 
     private val _onlineFeedState = MutableStateFlow<OnlineFeedUiState>(OnlineFeedUiState.Loading)
     val onlineFeedState: StateFlow<OnlineFeedUiState> = _onlineFeedState
+
+    private val _isScanningDeviceMusic = MutableStateFlow(false)
+    val isScanningDeviceMusic: StateFlow<Boolean> = _isScanningDeviceMusic
 
     private var onlineFetchJob: Job? = null
 
@@ -314,6 +317,8 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
             ?: allTracks.value
         if (mixTracks.isNotEmpty()) {
             playTrackInList(mixTracks.first(), mixTracks)
+        } else {
+            showBanner("ابتدا دکمه «اسکن موزیک‌های دستگاه» را بزنید تا آهنگ‌ها اضافه شوند")
         }
     }
 
@@ -435,12 +440,47 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun scanDeviceMusic(showBannerOnResult: Boolean = true) {
+        if (_isScanningDeviceMusic.value) return
+        viewModelScope.launch {
+            _isScanningDeviceMusic.value = true
+            try {
+                val count = repository.scanDeviceAudio()
+                if (count > 0) {
+                    val controller = mediaController
+                    if (controller != null && controller.mediaItemCount == 0) {
+                        val tracks = repository.getAllTracksOnce()
+                        if (tracks.isNotEmpty()) {
+                            controller.setMediaItems(tracks.map { repository.toMediaItem(it) }, 0, 0L)
+                            controller.prepare()
+                        }
+                    }
+                    if (showBannerOnResult) {
+                        showBanner("$count آهنگ از حافظه دستگاه به لیست پخش اضافه شد")
+                    }
+                } else if (count == 0 && showBannerOnResult) {
+                    showBanner("آهنگی در حافظه دستگاه پیدا نشد؛ می‌توانید دستی فایل صوتی اضافه کنید")
+                }
+            } finally {
+                _isScanningDeviceMusic.value = false
+            }
+        }
+    }
+
     fun importAudioUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
             val count = repository.importAudioUris(uris)
             if (count > 0) {
-                showBanner("$count آهنگ به کتابخانه و اندروید اتو اضافه شد")
+                val controller = mediaController
+                if (controller != null && controller.mediaItemCount == 0) {
+                    val tracks = repository.getAllTracksOnce()
+                    if (tracks.isNotEmpty()) {
+                        controller.setMediaItems(tracks.map { repository.toMediaItem(it) }, 0, 0L)
+                        controller.prepare()
+                    }
+                }
+                showBanner("$count آهنگ به لیست پخش و اندروید اتو اضافه شد")
             }
         }
     }
@@ -548,20 +588,19 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
         _statusBannerMessage.value = null
     }
 
-    fun selectOnlineMode(mode: OnlineSourceMode) {
-        if (_onlineSourceMode.value == mode) return
-        _onlineSourceMode.value = mode
+    fun selectOnlineRegion(region: OnlineSourceRegion) {
+        if (_onlineRegion.value == region) return
+        _onlineRegion.value = region
+        loadOnlineFeed()
+    }
+
+    fun selectIranianSiteFilter(siteFilter: IranianMusicSiteFilter) {
+        _iranianSiteFilter.value = siteFilter
         loadOnlineFeed()
     }
 
     fun selectOnlineGenre(genre: OnlineTrackGenre) {
         _onlineGenre.value = genre
-        _onlineSearchQuery.value = ""
-        loadOnlineFeed()
-    }
-
-    fun selectOnlineRadioCategory(category: OnlineRadioCategory) {
-        _onlineRadioCategory.value = category
         _onlineSearchQuery.value = ""
         loadOnlineFeed()
     }
@@ -575,16 +614,16 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
         onlineFetchJob = viewModelScope.launch {
             _onlineFeedState.value = OnlineFeedUiState.Loading
             val query = _onlineSearchQuery.value.trim()
-            val result = when (_onlineSourceMode.value) {
-                OnlineSourceMode.TRACKS -> {
+            val result = when (_onlineRegion.value) {
+                OnlineSourceRegion.IRANIAN_SITES -> {
+                    onlineRepository.fetchIranianSiteTracks(_iranianSiteFilter.value, query)
+                }
+                OnlineSourceRegion.GLOBAL_WEB -> {
                     if (query.isNotEmpty()) {
                         onlineRepository.searchWebTracks(query)
                     } else {
                         onlineRepository.fetchTrendingTracks(_onlineGenre.value)
                     }
-                }
-                OnlineSourceMode.LIVE_RADIO -> {
-                    onlineRepository.fetchLiveRadioStations(_onlineRadioCategory.value, query)
                 }
             }
             _onlineFeedState.value = result.fold(
@@ -592,7 +631,7 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
                 onFailure = { err ->
                     OnlineFeedUiState.Error(
                         err.localizedMessage?.takeIf { it.isNotBlank() }
-                            ?: "اتصال اینترنت یا دسترسی به شبکه آزاد را بررسی کنید."
+                            ?: "اتصال اینترنت یا دسترسی به سایت‌های موسیقی را بررسی کنید."
                     )
                 }
             )
@@ -615,7 +654,7 @@ class AvaPlayerViewModel(application: Application) : AndroidViewModel(applicatio
         return Track(
             id = mediaId,
             title = meta.title?.toString() ?: "در حال پخش",
-            artist = meta.artist?.toString() ?: "آوا پلیر",
+            artist = meta.artist?.toString() ?: "melodi",
             album = meta.albumTitle?.toString() ?: "",
             durationMs = meta.extras?.getLong(MusicRepository.EXTRA_DURATION_MS) ?: 0L,
             mediaUri = localConfiguration?.uri?.toString() ?: "",

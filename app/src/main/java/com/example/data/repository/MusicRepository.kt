@@ -1,14 +1,19 @@
 package com.example.data.repository
 
+import android.Manifest
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.DrawableRes
-import androidx.annotation.RawRes
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -53,93 +58,155 @@ class MusicRepository(private val context: Context) {
     }
 
     suspend fun ensureSeeded() = withContext(Dispatchers.IO) {
-        if (dao.getTrackCount() == 0) {
-            val seedTracks = listOf(
-                TrackEntity(
-                    id = "seed_night_drive",
-                    title = "بزرگراه نیمه‌شب (Night Drive)",
-                    artist = "آوا استودیو",
-                    album = "سینت‌ویو جاده",
-                    durationMs = 24_000L,
-                    mediaUri = rawUri(R.raw.track_night_drive),
-                    artworkUri = drawableUri(R.drawable.img_album_night_drive_1794549204569),
-                    isFavorite = true,
-                    isImported = false,
-                    genre = "سینت‌ویو",
-                    accentColorHex = 0xFFFF5E3AL,
-                    addedAt = 1L
-                ),
-                TrackEntity(
-                    id = "seed_persian_horizon",
-                    title = "افق کویر (Persian Horizon)",
-                    artist = "نوای پارس",
-                    album = "سفرهای شرقی",
-                    durationMs = 26_000L,
-                    mediaUri = rawUri(R.raw.track_persian_horizon),
-                    artworkUri = drawableUri(R.drawable.img_album_persian_horizon_1794549205476),
-                    isFavorite = true,
-                    isImported = false,
-                    genre = "الکترونیک ایرانی",
-                    accentColorHex = 0xFF3CE0D0L,
-                    addedAt = 2L
-                ),
-                TrackEntity(
-                    id = "seed_obsidian_lofi",
-                    title = "واینل بارانی (Obsidian Lo-Fi)",
-                    artist = "رنگ شب",
-                    album = "اتاق بارانی",
-                    durationMs = 22_000L,
-                    mediaUri = rawUri(R.raw.track_obsidian_lofi),
-                    artworkUri = drawableUri(R.drawable.img_album_obsidian_lofi_1794549206613),
-                    isFavorite = false,
-                    isImported = false,
-                    genre = "لو-فای",
-                    accentColorHex = 0xFFFFB84DL,
-                    addedAt = 3L
-                ),
-                TrackEntity(
-                    id = "seed_velvet_echoes",
-                    title = "امواج مخملی (Velvet Echoes)",
-                    artist = "سپهر آوا",
-                    album = "پژواک آبسیدین",
-                    durationMs = 24_000L,
-                    mediaUri = rawUri(R.raw.track_velvet_echoes),
-                    artworkUri = drawableUri(R.drawable.img_album_velvet_echoes_1794549206117),
-                    isFavorite = false,
-                    isImported = false,
-                    genre = "امبینت",
-                    accentColorHex = 0xFFE8609AL,
-                    addedAt = 4L
-                )
-            )
-            dao.insertTracksIfAbsent(seedTracks)
+        // Remove any legacy bundled/default seed tracks
+        dao.deleteDefaultSeedPlaylistRefs()
+        dao.deleteDefaultSeedTracks()
+        dao.clearPlaylistTracks(PLAYLIST_DESERT_CHILL_ID)
+        dao.deletePlaylistById(PLAYLIST_DESERT_CHILL_ID)
 
-            val drivingPlaylist = PlaylistEntity(
-                id = PLAYLIST_DRIVING_MIX_ID,
-                name = "میکس رانندگی شبانه",
-                description = "گزیده آهنگ‌های ریتمیک برای رانندگی با اندروید اتو",
-                artworkUri = drawableUri(R.drawable.img_album_night_drive_1794549204569),
-                isBuiltIn = true,
-                createdAt = 1L
-            )
-            val chillPlaylist = PlaylistEntity(
-                id = PLAYLIST_DESERT_CHILL_ID,
-                name = "آرامش کویر و باران",
-                description = "قطعات ملایم برای تمرکز و سفرهای آرام",
-                artworkUri = drawableUri(R.drawable.img_album_persian_horizon_1794549205476),
-                isBuiltIn = true,
-                createdAt = 2L
-            )
-            dao.insertPlaylistIfAbsent(drivingPlaylist)
-            dao.insertPlaylistIfAbsent(chillPlaylist)
+        val devicePlaylist = PlaylistEntity(
+            id = PLAYLIST_DRIVING_MIX_ID,
+            name = "موسیقی‌های دستگاه",
+            description = "تمامی آهنگ‌های حافظه گوشی برای پخش و اندروید اتو",
+            artworkUri = drawableUri(R.drawable.img_album_night_drive_1794549204569),
+            isBuiltIn = true,
+            createdAt = 1L
+        )
+        dao.insertPlaylist(devicePlaylist)
+    }
 
-            dao.insertPlaylistTrackCrossRef(PlaylistTrackCrossRef(PLAYLIST_DRIVING_MIX_ID, "seed_night_drive", 0))
-            dao.insertPlaylistTrackCrossRef(PlaylistTrackCrossRef(PLAYLIST_DRIVING_MIX_ID, "seed_velvet_echoes", 1))
-            dao.insertPlaylistTrackCrossRef(PlaylistTrackCrossRef(PLAYLIST_DRIVING_MIX_ID, "seed_persian_horizon", 2))
-
-            dao.insertPlaylistTrackCrossRef(PlaylistTrackCrossRef(PLAYLIST_DESERT_CHILL_ID, "seed_persian_horizon", 0))
-            dao.insertPlaylistTrackCrossRef(PlaylistTrackCrossRef(PLAYLIST_DESERT_CHILL_ID, "seed_obsidian_lofi", 1))
+    fun hasAudioScanPermission(): Boolean {
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
         }
+        return ContextCompat.checkSelfPermission(context, permission) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    suspend fun scanDeviceAudio(): Int = withContext(Dispatchers.IO) {
+        ensureSeeded()
+        if (!hasAudioScanPermission()) return@withContext -1
+
+        val existingMap = dao.getAllTracksOnce().associateBy { it.id }
+        val fallbackCovers = listOf(
+            R.drawable.img_album_night_drive_1794549204569,
+            R.drawable.img_album_obsidian_lofi_1794549206613,
+            R.drawable.img_album_persian_horizon_1794549205476,
+            R.drawable.img_album_velvet_echoes_1794549206117
+        )
+        val accentColors = listOf(0xFFFF6B47L, 0xFF3CE0D0L, 0xFFFFB84DL, 0xFFE8609AL)
+
+        val scanned = mutableListOf<TrackEntity>()
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATE_ADDED
+        )
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 3000"
+        val sortOrder = "${MediaStore.Audio.Media.DATE_ADDED} DESC"
+
+        runCatching {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                sortOrder
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleCol = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
+                val artistCol = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+                val albumCol = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+                val albumIdCol = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+                val durationCol = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                val dateCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
+
+                var index = 0
+                while (cursor.moveToNext()) {
+                    val mediaId = cursor.getLong(idCol)
+                    val trackId = "dev_$mediaId"
+                    val rawTitle = if (titleCol >= 0) cursor.getString(titleCol) else null
+                    val rawArtist = if (artistCol >= 0) cursor.getString(artistCol) else null
+                    val rawAlbum = if (albumCol >= 0) cursor.getString(albumCol) else null
+                    val albumId = if (albumIdCol >= 0) cursor.getLong(albumIdCol) else -1L
+                    val durationMs = if (durationCol >= 0) cursor.getLong(durationCol) else 0L
+                    val dateAddedSec = if (dateCol >= 0) cursor.getLong(dateCol) else 0L
+
+                    val contentUri = ContentUris.withAppendedId(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        mediaId
+                    ).toString()
+
+                    val artUri = if (albumId > 0L) {
+                        ContentUris.withAppendedId(
+                            Uri.parse("content://media/external/audio/albumart"),
+                            albumId
+                        ).toString()
+                    } else {
+                        drawableUri(fallbackCovers[index % fallbackCovers.size])
+                    }
+
+                    val existing = existingMap[trackId]
+                    val title = rawTitle?.takeIf { it.isNotBlank() } ?: "آهنگ دستگاه"
+                    val artist = rawArtist
+                        ?.takeIf { it.isNotBlank() && it != "<unknown>" }
+                        ?: "هنرمند ناشناس"
+                    val album = rawAlbum
+                        ?.takeIf { it.isNotBlank() && it != "<unknown>" }
+                        ?: "موسیقی دستگاه"
+
+                    scanned.add(
+                        TrackEntity(
+                            id = trackId,
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            durationMs = durationMs.coerceAtLeast(1000L),
+                            mediaUri = contentUri,
+                            artworkUri = artUri,
+                            isFavorite = existing?.isFavorite ?: false,
+                            isImported = true,
+                            genre = "موسیقی دستگاه",
+                            accentColorHex = existing?.accentColorHex
+                                ?: accentColors[index % accentColors.size],
+                            addedAt = if (dateAddedSec > 0L) dateAddedSec * 1000L else System.currentTimeMillis() + index,
+                            lastPlayedAt = existing?.lastPlayedAt ?: 0L
+                        )
+                    )
+                    index++
+                }
+            }
+        }
+
+        // Remove stale scanned device tracks that no longer exist on storage
+        val scannedIds = scanned.map { it.id }.toSet()
+        existingMap.keys
+            .filter { it.startsWith("dev_") && it !in scannedIds }
+            .forEach { staleId ->
+                dao.deleteTrackFromAllPlaylists(staleId)
+                dao.deleteTrackById(staleId)
+            }
+
+        if (scanned.isNotEmpty()) {
+            dao.insertTracks(scanned)
+            scanned.forEachIndexed { idx, entity ->
+                dao.insertPlaylistTrackCrossRef(
+                    PlaylistTrackCrossRef(
+                        playlistId = PLAYLIST_DRIVING_MIX_ID,
+                        trackId = entity.id,
+                        sortOrder = idx
+                    )
+                )
+            }
+        }
+
+        scanned.size
     }
 
     suspend fun getAllTracksOnce(): List<Track> = withContext(Dispatchers.IO) {
@@ -209,6 +276,7 @@ class MusicRepository(private val context: Context) {
     }
 
     suspend fun deleteImportedTrack(trackId: String) = withContext(Dispatchers.IO) {
+        dao.deleteTrackFromAllPlaylists(trackId)
         dao.deleteImportedTrack(trackId)
     }
 
@@ -311,6 +379,15 @@ class MusicRepository(private val context: Context) {
 
         if (newEntities.isNotEmpty()) {
             dao.insertTracks(newEntities)
+            newEntities.forEachIndexed { idx, entity ->
+                dao.insertPlaylistTrackCrossRef(
+                    PlaylistTrackCrossRef(
+                        playlistId = PLAYLIST_DRIVING_MIX_ID,
+                        trackId = entity.id,
+                        sortOrder = idx
+                    )
+                )
+            }
         }
         newEntities.size
     }
@@ -345,17 +422,6 @@ class MusicRepository(private val context: Context) {
     }
 
     fun drawableUri(@DrawableRes resId: Int): String {
-        val resources = context.resources
-        return Uri.Builder()
-            .scheme(ContentResolver.SCHEME_ANDROID_RESOURCE)
-            .authority(resources.getResourcePackageName(resId))
-            .appendPath(resources.getResourceTypeName(resId))
-            .appendPath(resources.getResourceEntryName(resId))
-            .build()
-            .toString()
-    }
-
-    private fun rawUri(@RawRes resId: Int): String {
         val resources = context.resources
         return Uri.Builder()
             .scheme(ContentResolver.SCHEME_ANDROID_RESOURCE)

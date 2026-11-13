@@ -148,6 +148,9 @@ class AvaMediaLibraryService : MediaLibraryService() {
 
         serviceScope.launch {
             repository.ensureSeeded()
+            if (repository.hasAudioScanPermission()) {
+                repository.scanDeviceAudio()
+            }
             val stored = preferences.getSnapshot()
             EqualizerController.restoreSavedConfig(
                 enabled = stored.equalizerEnabled,

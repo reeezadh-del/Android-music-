@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.model.Track
 import com.example.data.repository.MusicRepository
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -22,7 +23,7 @@ class ExampleRobolectricTest {
     @Test
     fun `app metadata and Android Auto service are configured`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        assertEquals("آوا پلیر", context.getString(R.string.app_name))
+        assertEquals("melodi", context.getString(R.string.app_name))
 
         val appInfo = context.packageManager.getApplicationInfo(
             context.packageName,
@@ -40,22 +41,35 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `music repository seeds tracks and toggles favorites`() = runTest {
+    fun `music repository has no default seed tracks and supports saving and toggling favorites`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repo = MusicRepository(context)
         repo.ensureSeeded()
 
-        val tracks = repo.getAllTracksOnce()
-        assertTrue(tracks.size >= 4)
+        val initialTracks = repo.getAllTracksOnce()
+        assertTrue(initialTracks.none { it.id.startsWith("seed_") })
 
         val playlists = repo.getPlaylistsOnce()
         assertTrue(playlists.any { it.id == MusicRepository.PLAYLIST_DRIVING_MIX_ID })
 
-        val lofi = tracks.firstOrNull { it.id == "seed_obsidian_lofi" }
-        assertNotNull(lofi)
-        val initialFav = lofi!!.isFavorite
-        val newFav = repo.toggleFavorite(lofi.id)
+        val deviceTrack = Track(
+            id = "dev_101",
+            title = "آهنگ نمونه دستگاه",
+            artist = "هنرمند دستگاه",
+            album = "آلبوم دستگاه",
+            durationMs = 180_000L,
+            mediaUri = "content://media/external/audio/media/101",
+            artworkUri = "",
+            isFavorite = false,
+            isImported = true
+        )
+        repo.saveOnlineTrack(deviceTrack)
+
+        val saved = repo.getTrackById("dev_101")
+        assertNotNull(saved)
+        val initialFav = saved!!.isFavorite
+        val newFav = repo.toggleFavorite(saved.id)
         assertEquals(!initialFav, newFav)
-        assertFalse(repo.getTrackById(lofi.id)!!.isFavorite == initialFav)
+        assertFalse(repo.getTrackById(saved.id)!!.isFavorite == initialFav)
     }
 }

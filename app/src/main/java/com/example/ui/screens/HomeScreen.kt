@@ -22,8 +22,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -57,8 +60,10 @@ fun HomeScreen(
     albums: List<AlbumSummary>,
     currentTrackId: String?,
     isPlaying: Boolean,
+    isScanningDeviceMusic: Boolean,
     onPlayDrivingMix: () -> Unit,
     onOpenCarMode: () -> Unit,
+    onScanDeviceMusic: () -> Unit,
     onImportAudio: () -> Unit,
     onPlayAlbum: (AlbumSummary) -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
@@ -200,45 +205,99 @@ fun HomeScreen(
             }
         }
 
-        // Import Local Music CTA Strip
+        // Device Music Auto-Scan & Manual Import CTA Row
         item {
-            Surface(
-                onClick = onImportAudio,
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("home_import_audio_button")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    onClick = onScanDeviceMusic,
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("home_scan_device_music_button")
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.LibraryAdd,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(AutoTurquoise.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = null,
+                                tint = AutoTurquoise
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isScanningDeviceMusic) "در حال اسکن…" else stringResource(R.string.action_scan_device_music),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "افزودن خودکار حافظه گوشی",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.action_import_audio),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "فایل‌های MP3، FLAC یا M4A را به کتابخانه و اندروید اتو بیفزایید",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                }
+
+                Surface(
+                    onClick = onImportAudio,
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("home_import_audio_button")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.LibraryAdd,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "انتخاب فایل",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "MP3 / FLAC / M4A",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -278,17 +337,85 @@ fun HomeScreen(
             )
         }
 
-        items(quickList, key = { it.id }) { track ->
-            TrackRowItem(
-                track = track,
-                isCurrent = track.id == currentTrackId,
-                isPlaying = isPlaying && track.id == currentTrackId,
-                onPlayClick = { onPlayTrack(track, quickList) },
-                onToggleFavorite = { onToggleFavorite(track.id) },
-                onPlayNext = { onPlayNext(track) },
-                onAddToPlaylistClick = { onAddToPlaylist(track) },
-                onDeleteImported = { onDeleteImported(track.id) }
-            )
+        if (quickList.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                            RoundedCornerShape(22.dp)
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(AutoTurquoise.copy(alpha = 0.14f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                tint = AutoTurquoise,
+                                modifier = Modifier.size(30.dp)
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.empty_device_music_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = stringResource(R.string.empty_device_music_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                onClick = onScanDeviceMusic,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.testTag("home_empty_scan_button")
+                            ) {
+                                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(stringResource(R.string.action_scan_device_music))
+                            }
+                            OutlinedButton(
+                                onClick = onImportAudio,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.testTag("home_empty_import_button")
+                            ) {
+                                Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("انتخاب دستی")
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            items(quickList, key = { it.id }) { track ->
+                TrackRowItem(
+                    track = track,
+                    isCurrent = track.id == currentTrackId,
+                    isPlaying = isPlaying && track.id == currentTrackId,
+                    onPlayClick = { onPlayTrack(track, quickList) },
+                    onToggleFavorite = { onToggleFavorite(track.id) },
+                    onPlayNext = { onPlayNext(track) },
+                    onAddToPlaylistClick = { onAddToPlaylist(track) },
+                    onDeleteImported = { onDeleteImported(track.id) }
+                )
+            }
         }
     }
 }
