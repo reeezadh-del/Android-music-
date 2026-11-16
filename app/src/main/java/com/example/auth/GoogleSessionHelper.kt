@@ -51,9 +51,15 @@ object GoogleSessionHelper {
         Scope("https://www.googleapis.com/auth/drive.file")
     )
 
+    private fun resolveWebClientId(context: Context): String {
+        val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+        return if (resId != 0) context.getString(resId) else ""
+    }
+
     suspend fun attemptSilentSignIn(activity: Activity): Result<FirebaseUser?> {
         return try {
-            val webClientId = activity.getString(R.string.default_web_client_id)
+            val webClientId = resolveWebClientId(activity)
+            if (webClientId.isBlank()) return Result.success(null)
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(true)
                 .setServerClientId(webClientId)
@@ -91,7 +97,10 @@ object GoogleSessionHelper {
 
     suspend fun signInInteractiveWithGoogle(activity: Activity): Result<FirebaseUser> {
         return try {
-            val webClientId = activity.getString(R.string.default_web_client_id)
+            val webClientId = resolveWebClientId(activity)
+            if (webClientId.isBlank()) {
+                return Result.failure(IllegalStateException("پیکربندی ورود گوگل (google-services.json) یافت نشد."))
+            }
             val signInOption = GetSignInWithGoogleOption.Builder(webClientId).build()
             val request = GetCredentialRequest.Builder()
                 .addCredentialOption(signInOption)

@@ -21,25 +21,21 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up Android SDK & Accept Licenses
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-36.1
-            platforms;android-36
-            build-tools;36.0.0
-
-      - name: Ensure Android SDK 36.1 Licenses & Packages
+      - name: Set up Android SDK & Install API 36.1
         run: |
-          SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           mkdir -p "$SDK_DIR/licenses"
           grep -qxF "24333f8a63b6825ea9c5514f83c2829b004d1fee" "$SDK_DIR/licenses/android-sdk-license" 2>/dev/null || echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> "$SDK_DIR/licenses/android-sdk-license"
           grep -qxF "84831b9409646a918e30573bab4c9c91346d8abd" "$SDK_DIR/licenses/android-sdk-preview-license" 2>/dev/null || echo "84831b9409646a918e30573bab4c9c91346d8abd" >> "$SDK_DIR/licenses/android-sdk-preview-license"
-          SDKMANAGER="$(command -v sdkmanager || echo "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager")"
-          if [ -x "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-            "$SDKMANAGER" "platform-tools" "platforms;android-36.1" "platforms;android-36" "build-tools;36.0.0"
+          SDKMANAGER="$(command -v sdkmanager || find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1 || true)"
+          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "Using sdkmanager: $SDKMANAGER in $SDK_DIR"
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null 2>&1 || true
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" --install "platform-tools" "platforms;android-36.1" "platforms;android-36" "build-tools;36.0.0"
+          else
+            echo "Warning: sdkmanager not found; relying on Gradle auto-download"
           fi
 
       - name: Prepare debug keystore
