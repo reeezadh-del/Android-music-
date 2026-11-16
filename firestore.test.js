@@ -131,3 +131,44 @@ test("Cannot list usernames collection", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore(DATABASE_ID);
   await assertFails(aliceDb.collection("usernames").get());
 });
+
+test("Authenticated owner can create and list diagnosticLogs; cross-user and updates are blocked", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore(DATABASE_ID);
+  const logRef = aliceDb.collection("users").doc(ALICE_UID).collection("diagnosticLogs").doc("log_001");
+
+  const validLog = {
+    userId: ALICE_UID,
+    reportId: "log_001",
+    isFatal: true,
+    tag: "UNCAUGHT_CRASH",
+    errorType: "java.lang.IllegalStateException",
+    message: "Test crash",
+    stackTrace: "at com.example.MainActivity.onCreate(MainActivity.kt:10)",
+    deviceInfo: "Samsung SM-S918B | Android 14 (API 34)",
+    appVersion: "1.0 (1)",
+    firebaseConfigured: true,
+    timestampMs: 1700000000000,
+    createdAt: serverTimestamp(),
+  };
+
+  await assertSucceeds(logRef.set(validLog));
+  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).collection("diagnosticLogs").get());
+
+  // Immutable update must fail
+  await assertFails(logRef.update({ message: "tampered" }));
+
+  // Cross-user read & write must fail
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore(DATABASE_ID);
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("diagnosticLogs").doc("log_001").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("diagnosticLogs").get());
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).collection("diagnosticLogs").doc("log_002").set({
+      ...validLog,
+      reportId: "log_002",
+    })
+  );
+
+  // Unauthenticated read/write must fail
+  const unauthDb = testEnv.unauthenticatedContext().firestore(DATABASE_ID);
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("diagnosticLogs").get());
+});

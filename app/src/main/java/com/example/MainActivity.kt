@@ -93,11 +93,15 @@ import com.example.auth.GoogleSessionHelper
 import com.example.auth.UserAccount
 import com.example.auth.UserAccountRepository
 import com.example.auth.authStateFlow
+import com.example.diagnostics.CrashReporter
+import com.example.diagnostics.DiagnosticLogRepository
 import com.example.drive.DriveDbSnapshot
 import com.example.player.AppTab
 import com.example.player.RepeatModeOption
 import com.example.player.TrackFilter
 import com.example.ui.components.AccountDriveDialog
+import com.example.ui.components.CrashReportDialog
+import com.example.ui.components.DiagnosticsHistoryDialog
 import com.example.ui.components.FullNowPlayingSheet
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.components.TrackRowItem
@@ -151,10 +155,54 @@ fun AvaAuthRoot() {
     val app = remember(context) { context.applicationContext as AvaMusicApplication }
     val scope = rememberCoroutineScope()
 
-    val auth = remember { Firebase.auth }
-    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    val diagnosticLogs by CrashReporter.logsFlow.collectAsStateWithLifecycle()
+    var isDiagnosticsDialogOpen by rememberSaveable { mutableStateOf(false) }
 
-    val userAccountRepository = remember { UserAccountRepository(app) }
+    LaunchedEffect(app) {
+        CrashReporter.getReports(app)
+    }
+
+    val isFirebaseReady = remember(app) { GoogleSessionHelper.isFirebaseConfigured(app) }
+    val auth = remember(isFirebaseReady) {
+        if (isFirebaseReady) runCatching { Firebase.auth }.getOrNull() else null
+    }
+    val userAccountRepository = remember(app, isFirebaseReady) {
+        if (isFirebaseReady) runCatching { UserAccountRepository(app) }.getOrNull() else null
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (auth == null || userAccountRepository == null) {
+            var configError by remember {
+                mutableStateOf<String?>(
+                    "پیکربندی Firebase (google-services.json) در این نسخه فعال نیست."
+                )
+            }
+            AuthGateScreen(
+                isSignedInWithGoogle = false,
+                userEmail = null,
+                isBusy = false,
+                statusLabel = null,
+                errorMessage = configError,
+                usernameInput = "",
+                usernameError = null,
+                isCheckingAvailability = false,
+                isUsernameAvailable = null,
+                isDriveAuthorized = false,
+                onGoogleSignInClick = {
+                    val msg = "برای ورود با گوگل، فایل app/google-services.json باید هنگام ساخت APK موجود باشد."
+                    configError = msg
+                    CrashReporter.recordNonFatal("FIREBASE_CONFIG_MISSING", message = msg, context = app)
+                },
+                onUsernameChange = {},
+                onAuthorizeDriveClick = {},
+                onRegisterUsernameSubmit = {},
+                onSwitchGoogleAccount = {},
+                diagnosticCount = diagnosticLogs.size,
+                onOpenDiagnostics = { isDiagnosticsDialogOpen = true }
+            )
+        } else {
+
+    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
 
     var isAuthBusy by remember { mutableStateOf(false) }
     var authStatusLabel by remember { mutableStateOf<String?>(null) }
@@ -349,9 +397,34 @@ fun AvaAuthRoot() {
             onUsernameChange = {},
             onAuthorizeDriveClick = {},
             onRegisterUsernameSubmit = {},
-            onSwitchGoogleAccount = {}
+            onSwitchGoogleAccount = {},
+            diagnosticCount = diagnosticLogs.size,
+            onOpenDiagnostics = { isDiagnosticsDialogOpen = true }
         )
     } else {
+        // Automatically back up unsynced crash & non-fatal reports to Cloud Firestore once signed in
+        val attemptedCloudSyncIds = remember(user.uid) { mutableSetOf<String>() }
+        LaunchedEffect(user.uid, diagnosticLogs) {
+            val pendingSync = diagnosticLogs.filter {
+                !it.syncedToCloud && it.reportId !in attemptedCloudSyncIds
+            }
+            if (pendingSync.isNotEmpty()) {
+                pendingSync.forEach { attemptedCloudSyncIds.add(it.reportId) }
+                val diagRepo = runCatching { DiagnosticLogRepository(app) }.getOrNull()
+                if (diagRepo != null) {
+                    val syncedIds = mutableSetOf<String>()
+                    pendingSync.forEach { report ->
+                        val res = diagRepo.uploadReport(user.uid, report)
+                        if (res.isSuccess) {
+                            syncedIds.add(report.reportId)
+                        }
+                    }
+                    if (syncedIds.isNotEmpty()) {
+                        CrashReporter.markSyncedToCloud(app, syncedIds)
+                    }
+                }
+            }
+        }
         // Observe user's Firestore account document (/users/{uid})
         val accountStateFlow = remember(user.uid) {
             userAccountRepository.observeUserAccount(user.uid)
@@ -482,7 +555,9 @@ fun AvaAuthRoot() {
                             GoogleSessionHelper.signOutCompletely(app)
                             isAuthBusy = false
                         }
-                    }
+                    },
+                    diagnosticCount = diagnosticLogs.size,
+                    onOpenDiagnostics = { isDiagnosticsDialogOpen = true }
                 )
             }
 
@@ -509,7 +584,9 @@ fun AvaAuthRoot() {
                             driveAccessToken = null
                             GoogleSessionHelper.signOutCompletely(app)
                         }
-                    }
+                    },
+                    diagnosticCount = diagnosticLogs.size,
+                    onOpenDiagnostics = { isDiagnosticsDialogOpen = true }
                 )
             }
 
@@ -564,6 +641,8 @@ fun AvaAuthRoot() {
                         userAccount = state.account,
                         userEmail = userEmail,
                         isDriveAuthorized = !driveAccessToken.isNullOrBlank(),
+                        diagnosticCount = diagnosticLogs.size,
+                        onOpenDiagnostics = { isDiagnosticsDialogOpen = true },
                         onRequestDriveAuth = {
                             requestDriveAuthorization(actionAfterAuth = null, launchPromptIfNeeded = true)
                         },
@@ -603,6 +682,26 @@ fun AvaAuthRoot() {
             }
         }
     }
+    } // end else (auth != null)
+
+        val pendingFatalCrash = remember(diagnosticLogs) {
+            diagnosticLogs.firstOrNull { it.isFatal && !it.acknowledged }
+        }
+        if (pendingFatalCrash != null) {
+            CrashReportDialog(
+                report = pendingFatalCrash,
+                onDismiss = { CrashReporter.acknowledgeAllFatalCrashes(app) }
+            )
+        }
+
+        if (isDiagnosticsDialogOpen) {
+            DiagnosticsHistoryDialog(
+                reports = diagnosticLogs,
+                onClearLogs = { CrashReporter.clearAllReports(app) },
+                onDismiss = { isDiagnosticsDialogOpen = false }
+            )
+        }
+    }
 }
 
 @Composable
@@ -611,6 +710,8 @@ fun SimpleMusicPlayerScreen(
     userAccount: UserAccount,
     userEmail: String,
     isDriveAuthorized: Boolean,
+    diagnosticCount: Int,
+    onOpenDiagnostics: () -> Unit,
     onRequestDriveAuth: () -> Unit,
     onSaveToDrive: () -> Unit,
     onRestoreFromDrive: () -> Unit,
@@ -698,7 +799,9 @@ fun SimpleMusicPlayerScreen(
                     if (!notifGranted) add(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
-            permissionsLauncher.launch(toRequest.toTypedArray())
+            if (toRequest.isNotEmpty()) {
+                runCatching { permissionsLauncher.launch(toRequest.toTypedArray()) }
+            }
         }
     }
 
@@ -1091,6 +1194,11 @@ fun SimpleMusicPlayerScreen(
                 isSyncingDrive = isSyncingDrive,
                 driveSyncMessage = driveSyncMessage,
                 favoriteCount = favoriteCount,
+                diagnosticCount = diagnosticCount,
+                onOpenDiagnostics = {
+                    isAccountDialogOpen = false
+                    onOpenDiagnostics()
+                },
                 onDismiss = { isAccountDialogOpen = false },
                 onAuthorizeDrive = onRequestDriveAuth,
                 onSaveToDrive = onSaveToDrive,

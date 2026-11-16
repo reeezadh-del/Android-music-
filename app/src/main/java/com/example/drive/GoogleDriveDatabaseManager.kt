@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.example.diagnostics.CrashReporter
 import com.example.player.MusicTrack
 import com.example.player.RepeatModeOption
 import kotlinx.coroutines.Dispatchers
@@ -259,6 +260,8 @@ class GoogleDriveDatabaseManager(
                     id
                 }
             }
+        }.onFailure { err ->
+            CrashReporter.recordNonFatal("DRIVE_UPLOAD", err, context = context)
         }
     }
 
@@ -299,6 +302,8 @@ class GoogleDriveDatabaseManager(
 
             val snapshot = readSnapshotFromSqlite() ?: return@runCatching null
             fileId to snapshot
+        }.onFailure { err ->
+            CrashReporter.recordNonFatal("DRIVE_SYNC", err, context = context)
         }
     }
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AlternateEmail
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.LockOpen
@@ -45,6 +46,8 @@ fun AccountDriveDialog(
     isSyncingDrive: Boolean,
     driveSyncMessage: String?,
     favoriteCount: Int,
+    diagnosticCount: Int = 0,
+    onOpenDiagnostics: () -> Unit = {},
     onDismiss: () -> Unit,
     onAuthorizeDrive: () -> Unit,
     onSaveToDrive: () -> Unit,
@@ -182,6 +185,25 @@ fun AccountDriveDialog(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(stringResource(R.string.drive_sync_restore))
                     }
+                }
+
+                OutlinedButton(
+                    onClick = onOpenDiagnostics,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("dialog_diagnostics_button")
+                ) {
+                    Icon(Icons.Rounded.BugReport, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (diagnosticCount > 0) {
+                            "${stringResource(R.string.diagnostics_title)} ($diagnosticCount)"
+                        } else {
+                            stringResource(R.string.diagnostics_title)
+                        }
+                    )
                 }
 
                 OutlinedButton(

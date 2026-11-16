@@ -1,6 +1,7 @@
 package com.example.auth
 
 import android.util.Log
+import com.example.diagnostics.CrashReporter
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -53,5 +54,12 @@ fun handleFirestoreError(
 
     val jsonString = errorInfoJson.toString()
     Log.e("FirestoreError", "Firestore Error: $jsonString")
+    if (path?.contains("diagnosticLogs") != true) {
+        CrashReporter.recordNonFatal(
+            tag = "FIRESTORE_${operationType.value.uppercase()}",
+            throwable = rootError,
+            message = "path=${path.orEmpty()}"
+        )
+    }
     return jsonString
 }

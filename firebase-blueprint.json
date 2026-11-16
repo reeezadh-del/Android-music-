@@ -58,6 +58,76 @@
         }
       },
       "required": ["userId", "username", "usernameKey", "createdAt", "updatedAt"]
+    },
+    "DiagnosticLog": {
+      "title": "DiagnosticLog",
+      "description": "Immutable crash or non-fatal error diagnostic report uploaded for an authenticated user's device.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the device owner."
+        },
+        "reportId": {
+          "type": "string",
+          "description": "Unique client-generated report identifier."
+        },
+        "isFatal": {
+          "type": "boolean",
+          "description": "True if captured from an uncaught crash; false for caught non-fatal errors."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Subsystem tag such as UNCAUGHT_CRASH, AUTH, DRIVE_SYNC, or MEDIA_SERVICE."
+        },
+        "errorType": {
+          "type": "string",
+          "description": "Exception or error class name."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable error message or context."
+        },
+        "stackTrace": {
+          "type": "string",
+          "description": "Captured JVM/Android stack trace."
+        },
+        "deviceInfo": {
+          "type": "string",
+          "description": "Manufacturer, model, Android version, API level, and primary ABI."
+        },
+        "appVersion": {
+          "type": "string",
+          "description": "Application versionName and versionCode."
+        },
+        "firebaseConfigured": {
+          "type": "boolean",
+          "description": "Whether FirebaseApp was initialized at the time of the error."
+        },
+        "timestampMs": {
+          "type": "integer",
+          "description": "Device epoch time in milliseconds when the error occurred."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "reportId",
+        "isFatal",
+        "tag",
+        "errorType",
+        "message",
+        "stackTrace",
+        "deviceInfo",
+        "appVersion",
+        "firebaseConfigured",
+        "timestampMs",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -68,6 +138,10 @@
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserAccount" },
       "description": "Stores each user's registered username and Drive database reference."
+    },
+    "/users/{userId}/diagnosticLogs/{logId}": {
+      "schema": { "$ref": "#/entities/DiagnosticLog" },
+      "description": "Stores immutable crash and error diagnostic reports per user device."
     }
   }
 }

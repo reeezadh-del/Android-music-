@@ -48,4 +48,11 @@
     <string name="drive_sync_restore">بازخوانی از گوگل درایو</string>
     <string name="drive_authorize_button">اتصال دسترسی گوگل درایو</string>
     <string name="auth_sign_out">خروج از حساب</string>
+    <string name="crash_dialog_title">گزارش کرش قبلی برنامه</string>
+    <string name="crash_dialog_subtitle">برنامه در اجرای قبلی دچار خطای ناگهانی شد. جزئیات خطا ذخیره شده است؛ می‌توانید آن را کپی یا ارسال کنید.</string>
+    <string name="crash_copy_action">کپی گزارش</string>
+    <string name="crash_share_action">ارسال گزارش</string>
+    <string name="diagnostics_title">گزارش خطاها و کرش‌ها</string>
+    <string name="diagnostics_empty">تاکنون هیچ خطا یا کرشی ثبت نشده است.</string>
+    <string name="diagnostics_clear">پاک کردن گزارش‌ها</string>
 </resources>

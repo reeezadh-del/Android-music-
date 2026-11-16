@@ -5,11 +5,13 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.auth.UserAccount
 import com.example.auth.UserAccountRepository
+import com.example.diagnostics.CrashReporter
 import com.example.drive.DriveDbSnapshot
 import com.example.drive.GoogleDriveDatabaseManager
 import com.example.player.AppTab
@@ -320,28 +322,38 @@ class MusicPlayerViewModel(
     }
 
     private fun connectToService() {
-        val token = SessionToken(appContext, ComponentName(appContext, MusicPlaybackService::class.java))
-        val future = MediaController.Builder(appContext, token).buildAsync()
-        controllerFuture = future
-        future.addListener(
-            {
-                runCatching { future.get() }.onSuccess { controller ->
-                    mediaController = controller
-                    viewModelScope.launch {
-                        val stored = preferences.prefsFlow.first()
-                        applyControllerModes(stored.shuffleEnabled, stored.repeatMode)
-                    }
-                    controller.addListener(object : Player.Listener {
-                        override fun onEvents(player: Player, events: Player.Events) {
-                            syncFromController(controller)
+        runCatching {
+            val token = SessionToken(appContext, ComponentName(appContext, MusicPlaybackService::class.java))
+            val future = MediaController.Builder(appContext, token).buildAsync()
+            controllerFuture = future
+            future.addListener(
+                {
+                    runCatching { future.get() }.onSuccess { controller ->
+                        mediaController = controller
+                        viewModelScope.launch {
+                            val stored = preferences.prefsFlow.first()
+                            applyControllerModes(stored.shuffleEnabled, stored.repeatMode)
                         }
-                    })
-                    syncFromController(controller)
-                    startProgressTicker()
-                }
-            },
-            MoreExecutors.directExecutor()
-        )
+                        controller.addListener(object : Player.Listener {
+                            override fun onEvents(player: Player, events: Player.Events) {
+                                syncFromController(controller)
+                            }
+
+                            override fun onPlayerError(error: PlaybackException) {
+                                CrashReporter.recordNonFatal("EXOPLAYER_PLAYBACK", error, context = appContext)
+                            }
+                        })
+                        syncFromController(controller)
+                        startProgressTicker()
+                    }.onFailure { err ->
+                        CrashReporter.recordNonFatal("PLAYER_SERVICE_FUTURE", err, context = appContext)
+                    }
+                },
+                MoreExecutors.directExecutor()
+            )
+        }.onFailure { err ->
+            CrashReporter.recordNonFatal("PLAYER_SERVICE_BIND", err, context = appContext)
+        }
     }
 
     private fun findTrackById(id: String): MusicTrack? {
@@ -417,7 +429,8 @@ class MusicPlayerViewModel(
                 _trendingTracks.value = list
                 _trendingError.value = null
                 mediaController?.let { syncFromController(it) }
-            }.onFailure {
+            }.onFailure { err ->
+                CrashReporter.recordNonFatal("TRENDING_FETCH", err, context = appContext)
                 _trendingError.value = "دریافت ترندهای اینستاگرام ممکن نشد. اتصال اینترنت را بررسی کنید."
             }
             _isLoadingTrending.value = false
