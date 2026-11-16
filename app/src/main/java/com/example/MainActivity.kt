@@ -189,9 +189,17 @@ fun AvaAuthRoot() {
                 isUsernameAvailable = null,
                 isDriveAuthorized = false,
                 onGoogleSignInClick = {
-                    val msg = "برای ورود با گوگل، فایل app/google-services.json باید هنگام ساخت APK موجود باشد."
-                    configError = msg
-                    CrashReporter.recordNonFatal("FIREBASE_CONFIG_MISSING", message = msg, context = app)
+                    val missingKeys = listOf("google_app_id", "google_api_key", "default_web_client_id").filter { key ->
+                        val id = app.resources.getIdentifier(key, "string", app.packageName)
+                        id == 0 || app.getString(id).isBlank()
+                    }
+                    val uiMsg = "تنظیمات Firebase داخل این APK موجود نیست (خروجی گیت‌هاب بدون google-services.json ساخته شده است). از منوی AI Studio گزینه Generate APK را بزنید یا سکرت GOOGLE_SERVICES_JSON را در گیت‌هاب اضافه کنید."
+                    configError = uiMsg
+                    CrashReporter.recordNonFatal(
+                        tag = "FIREBASE_CONFIG_MISSING",
+                        message = "$uiMsg | missing=${missingKeys.joinToString(",")}",
+                        context = app
+                    )
                 },
                 onUsernameChange = {},
                 onAuthorizeDriveClick = {},
