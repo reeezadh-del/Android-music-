@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AlternateEmail
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,6 +48,8 @@ fun AccountDriveDialog(
     isSyncingDrive: Boolean,
     driveSyncMessage: String?,
     favoriteCount: Int,
+    isGuestMode: Boolean = false,
+    onUpgradeToGoogle: () -> Unit = {},
     diagnosticCount: Int = 0,
     onOpenDiagnostics: () -> Unit = {},
     onDismiss: () -> Unit,
@@ -89,7 +93,11 @@ fun AccountDriveDialog(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.AlternateEmail,
+                                imageVector = if (isGuestMode) {
+                                    Icons.Rounded.PersonOutline
+                                } else {
+                                    Icons.Rounded.AlternateEmail
+                                },
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
@@ -101,7 +109,7 @@ fun AccountDriveDialog(
                                 modifier = Modifier.testTag("account_dialog_username")
                             )
                         }
-                        if (userEmail.isNotBlank()) {
+                        if (!isGuestMode && userEmail.isNotBlank()) {
                             Text(
                                 text = userEmail,
                                 style = MaterialTheme.typography.bodySmall,
@@ -114,10 +122,10 @@ fun AccountDriveDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = if (!driveFileId.isNullOrBlank()) {
-                                "دیتابیس SQLite در گوگل درایو فعال است"
-                            } else {
-                                "دیتابیس هنوز روی گوگل درایو آپلود نشده است"
+                            text = when {
+                                isGuestMode -> stringResource(R.string.guest_mode_info)
+                                !driveFileId.isNullOrBlank() -> "دیتابیس SQLite در گوگل درایو فعال است"
+                                else -> "دیتابیس هنوز روی گوگل درایو آپلود نشده است"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.tertiary
@@ -125,7 +133,7 @@ fun AccountDriveDialog(
                     }
                 }
 
-                if (!driveSyncMessage.isNullOrBlank()) {
+                if (!isGuestMode && !driveSyncMessage.isNullOrBlank()) {
                     Text(
                         text = driveSyncMessage,
                         style = MaterialTheme.typography.bodySmall,
@@ -133,7 +141,20 @@ fun AccountDriveDialog(
                     )
                 }
 
-                if (!isDriveAuthorized) {
+                if (isGuestMode) {
+                    Button(
+                        onClick = onUpgradeToGoogle,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("dialog_guest_google_login_button")
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Login, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.guest_upgrade_google))
+                    }
+                } else if (!isDriveAuthorized) {
                     Button(
                         onClick = onAuthorizeDrive,
                         enabled = !isSyncingDrive,
@@ -220,7 +241,13 @@ fun AccountDriveDialog(
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.auth_sign_out))
+                    Text(
+                        if (isGuestMode) {
+                            stringResource(R.string.guest_sign_out)
+                        } else {
+                            stringResource(R.string.auth_sign_out)
+                        }
+                    )
                 }
             }
         },

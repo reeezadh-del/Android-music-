@@ -142,4 +142,14 @@ class ExampleRobolectricTest {
         assertTrue(com.example.auth.UserAccountRepository.validateUsername("12345") != null)
         assertTrue(com.example.auth.UserAccountRepository.validateUsername("ab c") != null)
     }
+
+    @Test
+    fun `guest mode preference toggles and clears cleanly`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = MusicPreferences(context)
+        prefs.setGuestMode(true)
+        assertTrue(prefs.prefsFlow.first().isGuestMode)
+        prefs.clearUserSessionData()
+        assertFalse(prefs.prefsFlow.first().isGuestMode)
+    }
 }

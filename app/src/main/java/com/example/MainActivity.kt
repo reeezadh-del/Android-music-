@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Whatshot
@@ -81,6 +82,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
@@ -98,6 +100,7 @@ import com.example.diagnostics.DiagnosticLogRepository
 import com.example.drive.DriveDbSnapshot
 import com.example.player.AppTab
 import com.example.player.RepeatModeOption
+import com.example.player.StoredMusicPrefs
 import com.example.player.TrackFilter
 import com.example.ui.components.AccountDriveDialog
 import com.example.ui.components.CrashReportDialog
@@ -155,6 +158,9 @@ fun AvaAuthRoot() {
     val app = remember(context) { context.applicationContext as AvaMusicApplication }
     val scope = rememberCoroutineScope()
 
+    val storedPrefs by app.preferences.prefsFlow.collectAsStateWithLifecycle(
+        initialValue = StoredMusicPrefs()
+    )
     val diagnosticLogs by CrashReporter.logsFlow.collectAsStateWithLifecycle()
     var isDiagnosticsDialogOpen by rememberSaveable { mutableStateOf(false) }
 
@@ -171,7 +177,54 @@ fun AvaAuthRoot() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (auth == null || userAccountRepository == null) {
+        if (storedPrefs.isGuestMode) {
+            key("guest") {
+                val guestViewModel: MusicPlayerViewModel = viewModel(
+                    key = "guest",
+                    factory = viewModelFactory {
+                        initializer {
+                            val application = checkNotNull(this[APPLICATION_KEY]) as AvaMusicApplication
+                            MusicPlayerViewModel(
+                                appContext = application,
+                                preferences = application.preferences,
+                                repository = application.repository,
+                                trendingRepository = application.trendingRepository,
+                                userAccountRepository = null,
+                                driveDbManager = application.driveDbManager,
+                                currentUserId = "guest"
+                            )
+                        }
+                    }
+                )
+                val guestLabel = stringResource(R.string.guest_username_badge)
+                val guestAccount = remember(guestLabel) {
+                    UserAccount(
+                        id = "guest",
+                        userId = "guest",
+                        username = guestLabel,
+                        usernameKey = "guest"
+                    )
+                }
+                SimpleMusicPlayerScreen(
+                    viewModel = guestViewModel,
+                    userAccount = guestAccount,
+                    userEmail = "",
+                    isDriveAuthorized = false,
+                    isGuestMode = true,
+                    onUpgradeToGoogle = {
+                        scope.launch { app.preferences.setGuestMode(false) }
+                    },
+                    diagnosticCount = diagnosticLogs.size,
+                    onOpenDiagnostics = { isDiagnosticsDialogOpen = true },
+                    onRequestDriveAuth = {},
+                    onSaveToDrive = {},
+                    onRestoreFromDrive = {},
+                    onSignOut = {
+                        scope.launch { app.preferences.setGuestMode(false) }
+                    }
+                )
+            }
+        } else if (auth == null || userAccountRepository == null) {
             var configError by remember {
                 mutableStateOf<String?>(
                     "پیکربندی Firebase (google-services.json) در این نسخه فعال نیست."
@@ -200,6 +253,9 @@ fun AvaAuthRoot() {
                         message = "$uiMsg | missing=${missingKeys.joinToString(",")}",
                         context = app
                     )
+                },
+                onGuestSignInClick = {
+                    scope.launch { app.preferences.setGuestMode(true) }
                 },
                 onUsernameChange = {},
                 onAuthorizeDriveClick = {},
@@ -355,8 +411,9 @@ fun AvaAuthRoot() {
         }
     }
 
-    // Automatic silent Google Sign-In attempt once on cold start
+    // Automatic silent Google Sign-In attempt once on cold start (skipped in Guest Mode)
     LaunchedEffect(Unit) {
+        if (app.preferences.prefsFlow.first().isGuestMode) return@LaunchedEffect
         if (!hasAttemptedSilentLogin && auth.currentUser == null && activity != null) {
             hasAttemptedSilentLogin = true
             isAuthBusy = true
@@ -401,6 +458,12 @@ fun AvaAuthRoot() {
                     isAuthBusy = false
                     authStatusLabel = null
                 }
+            },
+            onGuestSignInClick = {
+                isAuthBusy = false
+                authStatusLabel = null
+                authError = null
+                scope.launch { app.preferences.setGuestMode(true) }
             },
             onUsernameChange = {},
             onAuthorizeDriveClick = {},
@@ -649,6 +712,8 @@ fun AvaAuthRoot() {
                         userAccount = state.account,
                         userEmail = userEmail,
                         isDriveAuthorized = !driveAccessToken.isNullOrBlank(),
+                        isGuestMode = false,
+                        onUpgradeToGoogle = {},
                         diagnosticCount = diagnosticLogs.size,
                         onOpenDiagnostics = { isDiagnosticsDialogOpen = true },
                         onRequestDriveAuth = {
@@ -718,6 +783,8 @@ fun SimpleMusicPlayerScreen(
     userAccount: UserAccount,
     userEmail: String,
     isDriveAuthorized: Boolean,
+    isGuestMode: Boolean = false,
+    onUpgradeToGoogle: () -> Unit = {},
     diagnosticCount: Int,
     onOpenDiagnostics: () -> Unit,
     onRequestDriveAuth: () -> Unit,
@@ -902,12 +969,13 @@ fun SimpleMusicPlayerScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(
+                                        modifier = Modifier.weight(1f),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(42.dp)
+                                                .size(40.dp)
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(MaterialTheme.colorScheme.primaryContainer),
                                             contentAlignment = Alignment.Center
@@ -918,16 +986,20 @@ fun SimpleMusicPlayerScreen(
                                                 tint = MaterialTheme.colorScheme.primary
                                             )
                                         }
-                                        Column {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = stringResource(R.string.music_player_title),
-                                                style = MaterialTheme.typography.headlineSmall,
-                                                fontWeight = FontWeight.Bold
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
                                                 text = "${allTracks.size} آهنگ",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
                                     }
@@ -950,7 +1022,11 @@ fun SimpleMusicPlayerScreen(
                                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.AlternateEmail,
+                                                    imageVector = if (isGuestMode) {
+                                                        Icons.Rounded.PersonOutline
+                                                    } else {
+                                                        Icons.Rounded.AlternateEmail
+                                                    },
                                                     contentDescription = "حساب کاربری",
                                                     tint = MaterialTheme.colorScheme.primary,
                                                     modifier = Modifier.size(16.dp)
@@ -960,26 +1036,28 @@ fun SimpleMusicPlayerScreen(
                                                     style = MaterialTheme.typography.labelLarge,
                                                     fontWeight = FontWeight.Bold
                                                 )
-                                                if (isSyncingDrive) {
-                                                    CircularProgressIndicator(
-                                                        modifier = Modifier.size(14.dp),
-                                                        strokeWidth = 2.dp
-                                                    )
-                                                } else {
-                                                    Icon(
-                                                        imageVector = if (isDriveAuthorized) {
-                                                            Icons.Rounded.CloudDone
-                                                        } else {
-                                                            Icons.Rounded.CloudOff
-                                                        },
-                                                        contentDescription = null,
-                                                        tint = if (isDriveAuthorized) {
-                                                            MaterialTheme.colorScheme.tertiary
-                                                        } else {
-                                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                                        },
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
+                                                if (!isGuestMode) {
+                                                    if (isSyncingDrive) {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(14.dp),
+                                                            strokeWidth = 2.dp
+                                                        )
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = if (isDriveAuthorized) {
+                                                                Icons.Rounded.CloudDone
+                                                            } else {
+                                                                Icons.Rounded.CloudOff
+                                                            },
+                                                            contentDescription = null,
+                                                            tint = if (isDriveAuthorized) {
+                                                                MaterialTheme.colorScheme.tertiary
+                                                            } else {
+                                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                                            },
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -1202,6 +1280,11 @@ fun SimpleMusicPlayerScreen(
                 isSyncingDrive = isSyncingDrive,
                 driveSyncMessage = driveSyncMessage,
                 favoriteCount = favoriteCount,
+                isGuestMode = isGuestMode,
+                onUpgradeToGoogle = {
+                    isAccountDialogOpen = false
+                    onUpgradeToGoogle()
+                },
                 diagnosticCount = diagnosticCount,
                 onOpenDiagnostics = {
                     isAccountDialogOpen = false

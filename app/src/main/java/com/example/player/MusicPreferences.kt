@@ -21,7 +21,8 @@ data class StoredMusicPrefs(
     val favoriteOnlineTracks: List<MusicTrack> = emptyList(),
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatModeOption = RepeatModeOption.OFF,
-    val lastTrackId: String? = null
+    val lastTrackId: String? = null,
+    val isGuestMode: Boolean = false
 )
 
 class MusicPreferences(private val context: Context) {
@@ -35,6 +36,7 @@ class MusicPreferences(private val context: Context) {
         val SHUFFLE_ENABLED = booleanPreferencesKey("shuffle_enabled")
         val REPEAT_MODE = stringPreferencesKey("repeat_mode")
         val LAST_TRACK_ID = stringPreferencesKey("last_track_id")
+        val IS_GUEST_MODE = booleanPreferencesKey("is_guest_mode")
     }
 
     val prefsFlow: Flow<StoredMusicPrefs> = context.musicDataStore.data.map { prefs ->
@@ -52,7 +54,8 @@ class MusicPreferences(private val context: Context) {
             shuffleEnabled = prefs[Keys.SHUFFLE_ENABLED] ?: false,
             repeatMode = runCatching { RepeatModeOption.valueOf(repeatStr) }
                 .getOrDefault(RepeatModeOption.OFF),
-            lastTrackId = prefs[Keys.LAST_TRACK_ID]
+            lastTrackId = prefs[Keys.LAST_TRACK_ID],
+            isGuestMode = prefs[Keys.IS_GUEST_MODE] ?: false
         )
     }
 
@@ -139,6 +142,12 @@ class MusicPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setGuestMode(enabled: Boolean) {
+        context.musicDataStore.edit { prefs ->
+            prefs[Keys.IS_GUEST_MODE] = enabled
+        }
+    }
+
     suspend fun clearUserSessionData() {
         context.musicDataStore.edit { prefs ->
             prefs.remove(Keys.FAVORITE_IDS)
@@ -146,6 +155,7 @@ class MusicPreferences(private val context: Context) {
             prefs.remove(Keys.SHUFFLE_ENABLED)
             prefs.remove(Keys.REPEAT_MODE)
             prefs.remove(Keys.LAST_TRACK_ID)
+            prefs.remove(Keys.IS_GUEST_MODE)
         }
     }
 }

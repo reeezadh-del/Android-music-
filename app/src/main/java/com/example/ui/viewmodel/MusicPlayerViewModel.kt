@@ -52,7 +52,7 @@ class MusicPlayerViewModel(
     private val preferences: MusicPreferences,
     private val repository: MusicLibraryRepository,
     private val trendingRepository: TrendingIranianRepository,
-    private val userAccountRepository: UserAccountRepository,
+    private val userAccountRepository: UserAccountRepository?,
     private val driveDbManager: GoogleDriveDatabaseManager,
     val currentUserId: String
 ) : ViewModel() {
@@ -203,7 +203,7 @@ class MusicPlayerViewModel(
                     )
                     applyControllerModes(snapshot.shuffleEnabled, snapshot.repeatMode)
                     if (account.driveFileId != fileId) {
-                        userAccountRepository.updateDriveFileId(currentUserId, fileId)
+                        userAccountRepository?.updateDriveFileId(currentUserId, fileId)
                     }
                     hasCompletedInitialDriveRestore = true
                     val msg = "دیتابیس @${account.username} از گوگل درایو بازخوانی شد (${snapshot.favoriteIds.size} علاقه‌مندی)"
@@ -282,7 +282,7 @@ class MusicPlayerViewModel(
         )
         result.onSuccess { fileId ->
             if (account.driveFileId != fileId) {
-                userAccountRepository.updateDriveFileId(currentUserId, fileId)
+                userAccountRepository?.updateDriveFileId(currentUserId, fileId)
             }
         }
         return result

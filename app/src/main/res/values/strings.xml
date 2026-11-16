@@ -55,4 +55,9 @@
     <string name="diagnostics_title">گزارش خطاها و کرش‌ها</string>
     <string name="diagnostics_empty">تاکنون هیچ خطا یا کرشی ثبت نشده است.</string>
     <string name="diagnostics_clear">پاک کردن گزارش‌ها</string>
+    <string name="auth_guest_sign_in">ورود به عنوان مهمان</string>
+    <string name="guest_username_badge">مهمان</string>
+    <string name="guest_mode_info">حالت مهمان فعال است؛ اطلاعات و علاقه‌مندی‌ها فقط روی همین گوشی ذخیره می‌شوند.</string>
+    <string name="guest_upgrade_google">ورود با گوگل و اتصال به درایو</string>
+    <string name="guest_sign_out">خروج از حالت مهمان</string>
 </resources>

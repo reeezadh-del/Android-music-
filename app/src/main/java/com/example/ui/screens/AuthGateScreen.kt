@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -87,6 +88,7 @@ fun AuthGateScreen(
     isUsernameAvailable: Boolean?,
     isDriveAuthorized: Boolean,
     onGoogleSignInClick: () -> Unit,
+    onGuestSignInClick: () -> Unit = {},
     onUsernameChange: (String) -> Unit,
     onAuthorizeDriveClick: () -> Unit,
     onRegisterUsernameSubmit: () -> Unit,
@@ -162,30 +164,52 @@ fun AuthGateScreen(
                 }
 
                 if (!isSignedInWithGoogle) {
-                    Button(
-                        onClick = onGoogleSignInClick,
-                        enabled = !isBusy,
-                        shape = RoundedCornerShape(18.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                            .testTag("google_sign_in_button")
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        if (isBusy) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(statusLabel ?: "در حال اتصال…")
-                        } else {
-                            Icon(Icons.AutoMirrored.Rounded.Login, contentDescription = null)
+                        Button(
+                            onClick = onGoogleSignInClick,
+                            enabled = !isBusy,
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                                .testTag("google_sign_in_button")
+                        ) {
+                            if (isBusy) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(statusLabel ?: "در حال اتصال…")
+                            } else {
+                                Icon(Icons.AutoMirrored.Rounded.Login, contentDescription = null)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = stringResource(R.string.auth_google_sign_in),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = onGuestSignInClick,
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .testTag("guest_sign_in_button")
+                        ) {
+                            Icon(Icons.Rounded.PersonOutline, contentDescription = null)
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = stringResource(R.string.auth_google_sign_in),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                text = stringResource(R.string.auth_guest_sign_in),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }

@@ -1,14 +1,18 @@
 package com.example
 
+import android.content.ComponentName
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.os.Binder
 import android.util.DisplayMetrics
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.example.diagnostics.CrashReporter
+import com.example.player.MusicPlaybackService
 import com.google.firebase.FirebaseApp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,6 +24,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -106,6 +111,40 @@ class MainActivityStartupTest {
             assertNull(CrashReporter.getPendingFatalCrash(context))
         } finally {
             CrashReporter.clearAllReports(context)
+        }
+    }
+
+    @Test
+    fun `guest sign in enters player screen without firebase auth and allows exiting`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val app = context.applicationContext as AvaMusicApplication
+        Shadows.shadowOf(app).setComponentNameAndServiceForBindService(
+            ComponentName(app, MusicPlaybackService::class.java),
+            Binder()
+        )
+        try {
+            kotlinx.coroutines.runBlocking { app.preferences.setGuestMode(false) }
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("guest_sign_in_button").assertIsDisplayed().performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("account_profile_button").fetchSemanticsNodes().isNotEmpty()
+            }
+
+            composeRule.onNodeWithTag("account_profile_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("nav_tab_library").assertIsDisplayed()
+
+            composeRule.onNodeWithTag("account_profile_button").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("dialog_guest_google_login_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("dialog_sign_out_button").performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("google_sign_in_button").fetchSemanticsNodes().isNotEmpty()
+            }
+
+            composeRule.onNodeWithTag("google_sign_in_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("guest_sign_in_button").assertIsDisplayed()
+        } finally {
+            kotlinx.coroutines.runBlocking { app.preferences.setGuestMode(false) }
         }
     }
 }

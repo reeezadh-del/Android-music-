@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed interface DriveAuthOutcome {
     data class Authorized(val accessToken: String) : DriveAuthOutcome
@@ -82,7 +83,9 @@ object GoogleSessionHelper {
                 .build()
 
             val credentialManager = CredentialManager.create(activity)
-            val result = credentialManager.getCredential(activity, request)
+            val result = withTimeoutOrNull(8_000L) {
+                credentialManager.getCredential(activity, request)
+            } ?: return Result.success(null)
             val credential = result.credential
             if (credential is CustomCredential &&
                 credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
