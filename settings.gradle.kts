@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "CarPlay HUR"
+rootProject.name = "Ava Music"
 
 include(":app")

@@ -4,72 +4,86 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Whatshot
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.data.model.Track
-import com.example.headunit.CarPlayDockSide
-import com.example.ui.carplay.CarPlayAndroidAutoProjectionScreen
-import com.example.ui.carplay.CarPlayAppGridView
-import com.example.ui.carplay.CarPlayBottomDock
-import com.example.ui.carplay.CarPlayCompactStatusBar
-import com.example.ui.carplay.CarPlayDashboardView
-import com.example.ui.carplay.CarPlayGlassCard
-import com.example.ui.carplay.CarPlayInstalledAppsScreen
-import com.example.ui.carplay.CarPlayMapsGpsScreen
-import com.example.ui.carplay.CarPlayMusicSuiteScreen
-import com.example.ui.carplay.CarPlayPhoneScreen
-import com.example.ui.carplay.CarPlaySettingsScreen
-import com.example.ui.carplay.CarPlayVerticalDock
-import com.example.ui.carplay.CarPlayWallpaperBackdrop
-import com.example.ui.carplay.rememberCarPlayPalette
-import com.example.ui.components.AddToPlaylistSheet
-import com.example.ui.screens.CarModeScreen
-import com.example.ui.screens.CreatePlaylistDialog
-import com.example.ui.screens.EqualizerScreen
-import com.example.ui.screens.NowPlayingScreen
+import com.example.player.AppTab
+import com.example.player.TrackFilter
+import com.example.ui.components.FullNowPlayingSheet
+import com.example.ui.components.MiniPlayerBar
+import com.example.ui.components.TrackRowItem
+import com.example.ui.screens.TrendingIranianScreen
 import com.example.ui.theme.AvaPlayerTheme
-import com.example.ui.viewmodel.AvaPlayerViewModel
-import com.example.ui.viewmodel.CarPlaySurfacePage
-import com.example.ui.viewmodel.HeadunitViewModel
+import com.example.ui.viewmodel.MusicPlayerViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,69 +91,36 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AvaPlayerTheme(darkTheme = true) {
-                CarPlayHeadunitApp(activity = this)
+                SimpleMusicPlayerScreen()
             }
         }
     }
 }
 
 @Composable
-fun CarPlayHeadunitApp(
-    activity: ComponentActivity,
-    playerViewModel: AvaPlayerViewModel = viewModel(),
-    headunitViewModel: HeadunitViewModel = viewModel()
+fun SimpleMusicPlayerScreen(
+    viewModel: MusicPlayerViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Player & Music Library States
-    val allTracks by playerViewModel.allTracks.collectAsStateWithLifecycle()
-    val filteredTracks by playerViewModel.filteredTracks.collectAsStateWithLifecycle()
-    val recentTracks by playerViewModel.recentTracks.collectAsStateWithLifecycle()
-    val albums by playerViewModel.albums.collectAsStateWithLifecycle()
-    val playlists by playerViewModel.playlists.collectAsStateWithLifecycle()
-    val playbackState by playerViewModel.playbackState.collectAsStateWithLifecycle()
-    val searchQuery by playerViewModel.searchQuery.collectAsStateWithLifecycle()
-    val libraryFilter by playerViewModel.libraryFilter.collectAsStateWithLifecycle()
-    val equalizerState by playerViewModel.equalizerState.collectAsStateWithLifecycle()
-    val statusBanner by playerViewModel.statusBannerMessage.collectAsStateWithLifecycle()
-    val onlineFeedState by playerViewModel.onlineFeedState.collectAsStateWithLifecycle()
-    val onlineRegion by playerViewModel.onlineRegion.collectAsStateWithLifecycle()
-    val iranianSiteFilter by playerViewModel.iranianSiteFilter.collectAsStateWithLifecycle()
-    val onlineGenre by playerViewModel.onlineGenre.collectAsStateWithLifecycle()
-    val onlineSearchQuery by playerViewModel.onlineSearchQuery.collectAsStateWithLifecycle()
-    val isScanningDeviceMusic by playerViewModel.isScanningDeviceMusic.collectAsStateWithLifecycle()
+    val activeTab by viewModel.activeTab.collectAsStateWithLifecycle()
+    val tracks by viewModel.filteredTracks.collectAsStateWithLifecycle()
+    val allTracks by viewModel.allTracks.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val activeFilter by viewModel.activeFilter.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+    val playerState by viewModel.playerState.collectAsStateWithLifecycle()
+    val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
 
-    // Headunit Reloaded & CarPlay Shell States
-    val hurSettings by headunitViewModel.settings.collectAsStateWithLifecycle()
-    val aapStatus by headunitViewModel.aapStatus.collectAsStateWithLifecycle()
-    val localIp by headunitViewModel.localIpAddress.collectAsStateWithLifecycle()
-    val usbState by headunitViewModel.usbState.collectAsStateWithLifecycle()
-    val gpsTelemetry by headunitViewModel.gpsTelemetry.collectAsStateWithLifecycle()
-    val currentPage by headunitViewModel.currentPage.collectAsStateWithLifecycle()
-    val installedApps by headunitViewModel.installedApps.collectAsStateWithLifecycle()
-    val clockText by headunitViewModel.clockText.collectAsStateWithLifecycle()
-    val batteryPercent by headunitViewModel.batteryPercent.collectAsStateWithLifecycle()
-    val headunitMessage by headunitViewModel.headunitMessage.collectAsStateWithLifecycle()
+    val trendingTracks by viewModel.trendingTracks.collectAsStateWithLifecycle()
+    val trendingCategory by viewModel.trendingCategory.collectAsStateWithLifecycle()
+    val trendingPreset by viewModel.trendingPreset.collectAsStateWithLifecycle()
+    val trendingSearchQuery by viewModel.trendingSearchQuery.collectAsStateWithLifecycle()
+    val isLoadingTrending by viewModel.isLoadingTrending.collectAsStateWithLifecycle()
+    val trendingError by viewModel.trendingError.collectAsStateWithLifecycle()
 
     var isNowPlayingOpen by rememberSaveable { mutableStateOf(false) }
-    var isCarModeOpen by rememberSaveable { mutableStateOf(false) }
-    var trackForPlaylistSheet by remember { mutableStateOf<Track?>(null) }
-    var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
-
-    val palette = rememberCarPlayPalette(hurSettings.carPlayTheme)
-
-    // Keep Screen On while driving
-    DisposableEffect(hurSettings.keepScreenOn) {
-        if (hurSettings.keepScreenOn) {
-            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-        onDispose {
-            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-    }
 
     val audioPermission = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -153,574 +134,404 @@ fun CarPlayHeadunitApp(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { results ->
             if (results[audioPermission] == true) {
-                playerViewModel.scanDeviceMusic(showBannerOnResult = false)
-            }
-            if (results[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
-                results[Manifest.permission.ACCESS_FINE_LOCATION] == true
-            ) {
-                headunitViewModel.refreshLocationPermissionState()
+                viewModel.scanDeviceMusic(showResultMessage = true)
             }
         }
     )
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions(),
-        onResult = {
-            headunitViewModel.refreshLocationPermissionState()
-        }
-    )
-
-    val micPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { granted ->
-            headunitViewModel.updateMicPassthrough(granted)
-        }
-    )
-
-    val triggerDeviceMusicScan: () -> Unit = {
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            audioPermission
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            playerViewModel.scanDeviceMusic(showBannerOnResult = true)
-        } else {
-            permissionsLauncher.launch(arrayOf(audioPermission))
-        }
-    }
-
-    val requestLocationAccess: () -> Unit = {
-        locationPermissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
-        )
-    }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = { uris ->
             if (uris.isNotEmpty()) {
-                playerViewModel.importAudioUris(uris)
+                viewModel.importAudioFiles(uris)
             }
         }
     )
+
+    val triggerScan: () -> Unit = {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            audioPermission
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            viewModel.scanDeviceMusic(showResultMessage = true)
+        } else {
+            permissionsLauncher.launch(arrayOf(audioPermission))
+        }
+    }
 
     LaunchedEffect(Unit) {
         val audioGranted = ContextCompat.checkSelfPermission(
             context,
             audioPermission
         ) == PackageManager.PERMISSION_GRANTED
-
         if (audioGranted) {
-            playerViewModel.scanDeviceMusic(showBannerOnResult = false)
-        }
-        val toRequest = buildList {
-            if (!audioGranted) add(audioPermission)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val notifGranted = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-                if (!notifGranted) add(Manifest.permission.POST_NOTIFICATIONS)
+            viewModel.scanDeviceMusic(showResultMessage = false)
+        } else {
+            val toRequest = buildList {
+                add(audioPermission)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val notifGranted = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (!notifGranted) add(Manifest.permission.POST_NOTIFICATIONS)
+                }
             }
-        }
-        if (toRequest.isNotEmpty()) {
             permissionsLauncher.launch(toRequest.toTypedArray())
         }
     }
 
-    LaunchedEffect(statusBanner) {
-        statusBanner?.let { msg ->
+    LaunchedEffect(statusMessage) {
+        statusMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
-            playerViewModel.clearBanner()
+            viewModel.clearMessage()
         }
     }
 
-    LaunchedEffect(headunitMessage) {
-        headunitMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
-            headunitViewModel.clearMessage()
-        }
-    }
-
-    val activeTrack = playbackState.currentTrack
+    val activeTrack = playerState.currentTrack
+    val progress = if (playerState.durationMs > 0L) {
+        (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else 0f
 
     Box(modifier = Modifier.fillMaxSize()) {
-        CarPlayWallpaperBackdrop(palette = palette)
-
         Scaffold(
-            containerColor = Color.Transparent,
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+            containerColor = MaterialTheme.colorScheme.background,
+            contentWindowInsets = WindowInsets.safeDrawing,
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+            bottomBar = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (activeTrack != null) {
+                        MiniPlayerBar(
+                            track = activeTrack,
+                            isPlaying = playerState.isPlaying,
+                            progress = progress,
+                            onExpand = { isNowPlayingOpen = true },
+                            onTogglePlayPause = viewModel::togglePlayPause,
+                            onSkipNext = viewModel::skipNext,
+                            applyNavigationBarPadding = false
+                        )
+                    }
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ) {
+                        NavigationBarItem(
+                            selected = activeTab == AppTab.LIBRARY,
+                            onClick = { viewModel.selectTab(AppTab.LIBRARY) },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.LibraryMusic,
+                                    contentDescription = stringResource(R.string.tab_library)
+                                )
+                            },
+                            label = { Text(stringResource(R.string.tab_library)) },
+                            modifier = Modifier.testTag("nav_tab_library")
+                        )
+                        NavigationBarItem(
+                            selected = activeTab == AppTab.TRENDING,
+                            onClick = { viewModel.selectTab(AppTab.TRENDING) },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Whatshot,
+                                    contentDescription = stringResource(R.string.tab_trending)
+                                )
+                            },
+                            label = { Text(stringResource(R.string.tab_trending)) },
+                            modifier = Modifier.testTag("nav_tab_trending")
+                        )
+                    }
+                }
+            }
         ) { innerPadding ->
-            BoxWithConstraints(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .padding(innerPadding),
+                contentAlignment = Alignment.TopCenter
             ) {
-                val isLandscapeHeadunit = maxWidth >= 600.dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 680.dp)
+                ) {
+                    when (activeTab) {
+                        AppTab.LIBRARY -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                // Header
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.primaryContainer),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.MusicNote,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = stringResource(R.string.music_player_title),
+                                                style = MaterialTheme.typography.headlineSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "${allTracks.size} آهنگ",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
 
-                if (isLandscapeHeadunit) {
-                    val dockContent: @Composable () -> Unit = {
-                        CarPlayVerticalDock(
-                            clockText = clockText,
-                            batteryPercent = batteryPercent,
-                            aapStatus = aapStatus,
-                            currentPage = currentPage,
-                            palette = palette,
-                            onSelectPage = headunitViewModel::navigateTo,
-                            onToggleDashboardGrid = headunitViewModel::toggleDashboardAndGrid
-                        )
-                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        IconButton(
+                                            onClick = triggerScan,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .testTag("scan_music_button")
+                                        ) {
+                                            if (isScanning) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(20.dp),
+                                                    strokeWidth = 2.dp
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Refresh,
+                                                    contentDescription = stringResource(R.string.action_scan_music)
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .testTag("add_audio_button")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Add,
+                                                contentDescription = stringResource(R.string.action_add_files)
+                                            )
+                                        }
+                                    }
+                                }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .windowInsetsPadding(WindowInsets.safeDrawing)
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        if (hurSettings.dockSide == CarPlayDockSide.LEFT) {
-                            dockContent()
+                                // Search Bar
+                                OutlinedTextField(
+                                    value = searchQuery,
+                                    onValueChange = viewModel::setSearchQuery,
+                                    placeholder = { Text(stringResource(R.string.search_hint)) },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Search, contentDescription = null)
+                                    },
+                                    trailingIcon = {
+                                        if (searchQuery.isNotEmpty()) {
+                                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                                Icon(Icons.Rounded.Close, contentDescription = "پاک کردن")
+                                            }
+                                        }
+                                    },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("search_music_input")
+                                )
+
+                                // Filter Chips
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TrackFilter.entries.forEach { filter ->
+                                        FilterChip(
+                                            selected = activeFilter == filter,
+                                            onClick = { viewModel.setFilter(filter) },
+                                            label = { Text(filter.labelFa) },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = if (filter == TrackFilter.FAVORITES) {
+                                                        Icons.Rounded.Favorite
+                                                    } else {
+                                                        Icons.Rounded.LibraryMusic
+                                                    },
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("filter_${filter.name}")
+                                        )
+                                    }
+                                }
+
+                                // Song List or Empty State
+                                if (tracks.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxWidth(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(24.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 16.dp)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(24.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (activeFilter == TrackFilter.FAVORITES) {
+                                                        Icons.Rounded.Favorite
+                                                    } else {
+                                                        Icons.Rounded.MusicNote
+                                                    },
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(48.dp)
+                                                )
+                                                Text(
+                                                    text = if (activeFilter == TrackFilter.FAVORITES) {
+                                                        stringResource(R.string.empty_favorites_title)
+                                                    } else {
+                                                        stringResource(R.string.empty_title)
+                                                    },
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                                Text(
+                                                    text = if (activeFilter == TrackFilter.FAVORITES) {
+                                                        stringResource(R.string.empty_favorites_subtitle)
+                                                    } else {
+                                                        stringResource(R.string.empty_subtitle)
+                                                    },
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    textAlign = TextAlign.Center
+                                                )
+
+                                                if (activeFilter == TrackFilter.ALL) {
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Button(
+                                                        onClick = triggerScan,
+                                                        shape = RoundedCornerShape(14.dp),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(48.dp)
+                                                            .testTag("empty_scan_button")
+                                                    ) {
+                                                        Icon(Icons.Rounded.Refresh, contentDescription = null)
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text(stringResource(R.string.action_scan_music))
+                                                    }
+                                                    OutlinedButton(
+                                                        onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
+                                                        shape = RoundedCornerShape(14.dp),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(48.dp)
+                                                            .testTag("empty_pick_file_button")
+                                                    ) {
+                                                        Icon(Icons.Rounded.Add, contentDescription = null)
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text(stringResource(R.string.action_add_files))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(bottom = 24.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(tracks, key = { it.id }) { track ->
+                                            TrackRowItem(
+                                                track = track,
+                                                isCurrent = activeTrack?.id == track.id,
+                                                isPlaying = playerState.isPlaying,
+                                                onClick = { viewModel.playTrack(track) },
+                                                onToggleFavorite = { viewModel.toggleFavorite(track) },
+                                                onRemoveImported = if (track.isImported) {
+                                                    { viewModel.removeImportedTrack(track) }
+                                                } else null
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
 
-                        Box(modifier = Modifier.weight(1f)) {
-                            CarPlayPageHost(
-                                currentPage = currentPage,
-                                palette = palette,
-                                playerViewModel = playerViewModel,
-                                headunitViewModel = headunitViewModel,
-                                allTracks = allTracks,
-                                filteredTracks = filteredTracks,
-                                recentTracks = recentTracks,
-                                albums = albums,
-                                playlists = playlists,
-                                activeTrack = activeTrack,
-                                isPlaying = playbackState.isPlaying,
-                                positionMs = playbackState.currentPositionMs,
-                                durationMs = playbackState.durationMs,
-                                isScanningDeviceMusic = isScanningDeviceMusic,
-                                searchQuery = searchQuery,
-                                libraryFilter = libraryFilter,
-                                equalizerState = equalizerState,
-                                onlineFeedState = onlineFeedState,
-                                onlineRegion = onlineRegion,
-                                iranianSiteFilter = iranianSiteFilter,
-                                onlineGenre = onlineGenre,
-                                onlineSearchQuery = onlineSearchQuery,
-                                hurSettings = hurSettings,
-                                aapStatus = aapStatus,
-                                localIp = localIp,
-                                usbState = usbState,
-                                gpsTelemetry = gpsTelemetry,
-                                installedApps = installedApps,
-                                onRequestLocation = requestLocationAccess,
-                                onRequestMic = { enabled ->
-                                    if (enabled) {
-                                        val granted = ContextCompat.checkSelfPermission(
-                                            context,
-                                            Manifest.permission.RECORD_AUDIO
-                                        ) == PackageManager.PERMISSION_GRANTED
-                                        if (granted) headunitViewModel.updateMicPassthrough(true)
-                                        else micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    } else {
-                                        headunitViewModel.updateMicPassthrough(false)
-                                    }
-                                },
-                                onScanDeviceMusic = triggerDeviceMusicScan,
-                                onImportAudio = { audioPickerLauncher.launch(arrayOf("audio/*")) },
-                                onOpenNowPlaying = { isNowPlayingOpen = true },
-                                onOpenCarMode = { isCarModeOpen = true },
-                                onAddToPlaylist = { trackForPlaylistSheet = it }
+                        AppTab.TRENDING -> {
+                            TrendingIranianScreen(
+                                tracks = trendingTracks,
+                                selectedCategory = trendingCategory,
+                                selectedPreset = trendingPreset,
+                                searchQuery = trendingSearchQuery,
+                                isLoading = isLoadingTrending,
+                                errorMessage = trendingError,
+                                currentTrackId = activeTrack?.id,
+                                isPlaying = playerState.isPlaying,
+                                onSelectCategory = viewModel::setTrendingCategory,
+                                onSelectPreset = viewModel::setTrendingPreset,
+                                onSearchQueryChange = viewModel::setTrendingSearchQuery,
+                                onSubmitSearch = viewModel::submitTrendingSearch,
+                                onClearSearch = viewModel::clearTrendingSearch,
+                                onRefresh = { viewModel.loadTrendingTracks(forceRefresh = true) },
+                                onPlayTrack = viewModel::playTrendingTrack,
+                                onToggleFavorite = viewModel::toggleFavorite
                             )
                         }
-
-                        if (hurSettings.dockSide == CarPlayDockSide.RIGHT) {
-                            dockContent()
-                        }
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        CarPlayCompactStatusBar(
-                            clockText = clockText,
-                            batteryPercent = batteryPercent,
-                            aapStatus = aapStatus,
-                            palette = palette
-                        )
-
-                        Box(modifier = Modifier.weight(1f)) {
-                            CarPlayPageHost(
-                                currentPage = currentPage,
-                                palette = palette,
-                                playerViewModel = playerViewModel,
-                                headunitViewModel = headunitViewModel,
-                                allTracks = allTracks,
-                                filteredTracks = filteredTracks,
-                                recentTracks = recentTracks,
-                                albums = albums,
-                                playlists = playlists,
-                                activeTrack = activeTrack,
-                                isPlaying = playbackState.isPlaying,
-                                positionMs = playbackState.currentPositionMs,
-                                durationMs = playbackState.durationMs,
-                                isScanningDeviceMusic = isScanningDeviceMusic,
-                                searchQuery = searchQuery,
-                                libraryFilter = libraryFilter,
-                                equalizerState = equalizerState,
-                                onlineFeedState = onlineFeedState,
-                                onlineRegion = onlineRegion,
-                                iranianSiteFilter = iranianSiteFilter,
-                                onlineGenre = onlineGenre,
-                                onlineSearchQuery = onlineSearchQuery,
-                                hurSettings = hurSettings,
-                                aapStatus = aapStatus,
-                                localIp = localIp,
-                                usbState = usbState,
-                                gpsTelemetry = gpsTelemetry,
-                                installedApps = installedApps,
-                                onRequestLocation = requestLocationAccess,
-                                onRequestMic = { enabled ->
-                                    if (enabled) {
-                                        val granted = ContextCompat.checkSelfPermission(
-                                            context,
-                                            Manifest.permission.RECORD_AUDIO
-                                        ) == PackageManager.PERMISSION_GRANTED
-                                        if (granted) headunitViewModel.updateMicPassthrough(true)
-                                        else micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    } else {
-                                        headunitViewModel.updateMicPassthrough(false)
-                                    }
-                                },
-                                onScanDeviceMusic = triggerDeviceMusicScan,
-                                onImportAudio = { audioPickerLauncher.launch(arrayOf("audio/*")) },
-                                onOpenNowPlaying = { isNowPlayingOpen = true },
-                                onOpenCarMode = { isCarModeOpen = true },
-                                onAddToPlaylist = { trackForPlaylistSheet = it }
-                            )
-                        }
-
-                        CarPlayBottomDock(
-                            currentPage = currentPage,
-                            palette = palette,
-                            onSelectPage = headunitViewModel::navigateTo,
-                            onToggleDashboardGrid = headunitViewModel::toggleDashboardAndGrid
-                        )
                     }
                 }
             }
         }
 
-        // Full-Screen Now Playing Overlay
         AnimatedVisibility(
             visible = isNowPlayingOpen && activeTrack != null,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
         ) {
             if (activeTrack != null) {
-                NowPlayingScreen(
+                FullNowPlayingSheet(
                     track = activeTrack,
-                    isPlaying = playbackState.isPlaying,
-                    currentPositionMs = playbackState.currentPositionMs,
-                    durationMs = playbackState.durationMs,
-                    shuffleEnabled = playbackState.shuffleEnabled,
-                    repeatMode = playbackState.repeatMode,
-                    queueTracks = playbackState.queueTracks,
-                    currentQueueIndex = playbackState.currentQueueIndex,
+                    isPlaying = playerState.isPlaying,
+                    positionMs = playerState.positionMs,
+                    durationMs = playerState.durationMs,
+                    shuffleEnabled = playerState.shuffleEnabled,
+                    repeatMode = playerState.repeatMode,
                     onCollapse = { isNowPlayingOpen = false },
-                    onTogglePlayPause = playerViewModel::togglePlayPause,
-                    onSkipNext = playerViewModel::skipNext,
-                    onSkipPrevious = playerViewModel::skipPrevious,
-                    onSeekTo = playerViewModel::seekTo,
-                    onToggleShuffle = playerViewModel::toggleShuffle,
-                    onCycleRepeat = playerViewModel::cycleRepeatMode,
-                    onToggleFavorite = { playerViewModel.toggleFavorite(activeTrack.id) },
-                    onSelectQueueItem = playerViewModel::playQueueItemAt,
-                    onOpenCarMode = {
-                        isNowPlayingOpen = false
-                        isCarModeOpen = true
-                    },
-                    onOpenEqualizer = {
-                        isNowPlayingOpen = false
-                        headunitViewModel.navigateTo(CarPlaySurfacePage.EQUALIZER)
-                    }
-                )
-            }
-        }
-
-        // Distraction-Safe Driving / Car Mode Overlay
-        AnimatedVisibility(
-            visible = isCarModeOpen,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            CarModeScreen(
-                track = activeTrack,
-                isPlaying = playbackState.isPlaying,
-                currentPositionMs = playbackState.currentPositionMs,
-                durationMs = playbackState.durationMs,
-                onExit = { isCarModeOpen = false },
-                onTogglePlayPause = playerViewModel::togglePlayPause,
-                onSkipNext = playerViewModel::skipNext,
-                onSkipPrevious = playerViewModel::skipPrevious,
-                onToggleFavorite = playerViewModel::toggleFavorite
-            )
-        }
-    }
-
-    val pendingTrack = trackForPlaylistSheet
-    if (pendingTrack != null) {
-        AddToPlaylistSheet(
-            track = pendingTrack,
-            playlists = playlists,
-            onSelectPlaylist = { playlist ->
-                playerViewModel.addTrackToPlaylist(playlist.id, pendingTrack.id, playlist.name)
-                trackForPlaylistSheet = null
-            },
-            onCreateNewPlaylistClick = {
-                showCreatePlaylistFromSheet = true
-            },
-            onDismiss = { trackForPlaylistSheet = null }
-        )
-    }
-
-    if (showCreatePlaylistFromSheet) {
-        CreatePlaylistDialog(
-            onConfirm = { name ->
-                playerViewModel.createPlaylist(name)
-                showCreatePlaylistFromSheet = false
-            },
-            onDismiss = { showCreatePlaylistFromSheet = false }
-        )
-    }
-}
-
-@Composable
-private fun CarPlayPageHost(
-    currentPage: CarPlaySurfacePage,
-    palette: com.example.ui.carplay.CarPlayPalette,
-    playerViewModel: AvaPlayerViewModel,
-    headunitViewModel: HeadunitViewModel,
-    allTracks: List<Track>,
-    filteredTracks: List<Track>,
-    recentTracks: List<Track>,
-    albums: List<com.example.data.model.AlbumSummary>,
-    playlists: List<com.example.data.model.Playlist>,
-    activeTrack: Track?,
-    isPlaying: Boolean,
-    positionMs: Long,
-    durationMs: Long,
-    isScanningDeviceMusic: Boolean,
-    searchQuery: String,
-    libraryFilter: com.example.ui.viewmodel.LibraryFilter,
-    equalizerState: com.example.data.model.EqualizerUiState,
-    onlineFeedState: com.example.ui.viewmodel.OnlineFeedUiState,
-    onlineRegion: com.example.data.remote.OnlineSourceRegion,
-    iranianSiteFilter: com.example.data.remote.IranianMusicSiteFilter,
-    onlineGenre: com.example.data.remote.OnlineTrackGenre,
-    onlineSearchQuery: String,
-    hurSettings: com.example.headunit.HeadunitSettings,
-    aapStatus: com.example.headunit.AapConnectionStatus,
-    localIp: String,
-    usbState: com.example.headunit.UsbHostUiState,
-    gpsTelemetry: com.example.headunit.GpsTelemetry,
-    installedApps: List<com.example.headunit.InstalledCarApp>,
-    onRequestLocation: () -> Unit,
-    onRequestMic: (Boolean) -> Unit,
-    onScanDeviceMusic: () -> Unit,
-    onImportAudio: () -> Unit,
-    onOpenNowPlaying: () -> Unit,
-    onOpenCarMode: () -> Unit,
-    onAddToPlaylist: (Track) -> Unit
-) {
-    AnimatedContent(
-        targetState = currentPage,
-        label = "carplay_page_transition"
-    ) { page ->
-        when (page) {
-            CarPlaySurfacePage.DASHBOARD -> {
-                CarPlayDashboardView(
-                    palette = palette,
-                    settings = hurSettings,
-                    aapStatus = aapStatus,
-                    localIp = localIp,
-                    usbState = usbState,
-                    gpsTelemetry = gpsTelemetry,
-                    currentTrack = activeTrack,
-                    isPlaying = isPlaying,
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    onRequestLocationPermission = onRequestLocation,
-                    onOpenNavigationApp = headunitViewModel::openBestNavigation,
-                    onStartReceiver = { mode -> headunitViewModel.startReceiver(mode) },
-                    onOpenProjection = { headunitViewModel.navigateTo(CarPlaySurfacePage.AA_PROJECTION) },
-                    onOpenMapsScreen = { headunitViewModel.navigateTo(CarPlaySurfacePage.MAPS_GPS) },
-                    onOpenMusicScreen = { headunitViewModel.navigateTo(CarPlaySurfacePage.MUSIC) },
-                    onOpenNowPlaying = onOpenNowPlaying,
-                    onTogglePlayPause = playerViewModel::togglePlayPause,
-                    onSkipNext = playerViewModel::skipNext,
-                    onSkipPrevious = playerViewModel::skipPrevious
-                )
-            }
-
-            CarPlaySurfacePage.APP_GRID -> {
-                BackHandler {
-                    headunitViewModel.navigateTo(CarPlaySurfacePage.DASHBOARD)
-                }
-                CarPlayAppGridView(
-                    palette = palette,
-                    aapStatus = aapStatus,
-                    installedCount = installedApps.size,
-                    onSelectPage = headunitViewModel::navigateTo,
-                    onOpenMessages = headunitViewModel::openMessages
-                )
-            }
-
-            CarPlaySurfacePage.AA_PROJECTION -> {
-                CarPlayAndroidAutoProjectionScreen(
-                    palette = palette,
-                    settings = hurSettings,
-                    aapStatus = aapStatus,
-                    localIp = localIp,
-                    usbState = usbState,
-                    onAttachSurface = headunitViewModel::attachVideoSurface,
-                    onStartReceiver = { mode -> headunitViewModel.startReceiver(mode) },
-                    onStopReceiver = headunitViewModel::stopReceiver,
-                    onRefreshUsb = headunitViewModel::refreshUsbDevices,
-                    onSendTouch = headunitViewModel::sendProjectionTouch,
-                    onSendSteeringKey = headunitViewModel::sendSteeringKey,
-                    onOpenSettings = { headunitViewModel.navigateTo(CarPlaySurfacePage.SETTINGS) },
-                    onBack = { headunitViewModel.navigateTo(CarPlaySurfacePage.DASHBOARD) }
-                )
-            }
-
-            CarPlaySurfacePage.MUSIC -> {
-                CarPlayMusicSuiteScreen(
-                    palette = palette,
-                    allTracks = allTracks,
-                    filteredTracks = filteredTracks,
-                    recentTracks = recentTracks,
-                    albums = albums,
-                    playlists = playlists,
-                    currentTrackId = activeTrack?.id,
-                    isPlaying = isPlaying,
-                    isScanningDeviceMusic = isScanningDeviceMusic,
-                    searchQuery = searchQuery,
-                    libraryFilter = libraryFilter,
-                    onlineFeedState = onlineFeedState,
-                    onlineRegion = onlineRegion,
-                    iranianSiteFilter = iranianSiteFilter,
-                    onlineGenre = onlineGenre,
-                    onlineSearchQuery = onlineSearchQuery,
-                    onPlayDrivingMix = playerViewModel::playDrivingMix,
-                    onOpenCarMode = onOpenCarMode,
-                    onOpenNowPlaying = onOpenNowPlaying,
-                    onScanDeviceMusic = onScanDeviceMusic,
-                    onImportAudio = onImportAudio,
-                    onPlayAlbum = playerViewModel::playAlbum,
-                    onPlayTrack = playerViewModel::playTrackInList,
-                    onToggleFavorite = playerViewModel::toggleFavorite,
-                    onPlayNext = playerViewModel::addTrackToQueueNext,
-                    onAddToPlaylist = onAddToPlaylist,
-                    onDeleteImported = playerViewModel::deleteImportedTrack,
-                    onSearchQueryChange = playerViewModel::setSearchQuery,
-                    onFilterSelect = playerViewModel::setLibraryFilter,
-                    onSelectRegion = playerViewModel::selectOnlineRegion,
-                    onSelectIranianSite = playerViewModel::selectIranianSiteFilter,
-                    onSelectGenre = playerViewModel::selectOnlineGenre,
-                    onOnlineSearchQueryChange = playerViewModel::setOnlineSearchQuery,
-                    onSubmitOnlineSearch = playerViewModel::loadOnlineFeed,
-                    onRefreshOnline = playerViewModel::loadOnlineFeed,
-                    onSaveOnlineTrack = playerViewModel::saveOnlineTrackToLibrary,
-                    onCreatePlaylist = playerViewModel::createPlaylist,
-                    onPlayPlaylist = playerViewModel::playPlaylist,
-                    onRemoveTrackFromPlaylist = playerViewModel::removeTrackFromPlaylist,
-                    onDeletePlaylist = playerViewModel::deletePlaylist,
-                    onBack = { headunitViewModel.navigateTo(CarPlaySurfacePage.DASHBOARD) }
-                )
-            }
-
-            CarPlaySurfacePage.MAPS_GPS -> {
-                CarPlayMapsGpsScreen(
-                    palette = palette,
-                    gpsTelemetry = gpsTelemetry,
-                    installedApps = installedApps,
-                    onRequestLocationPermission = onRequestLocation,
-                    onOpenBestNav = headunitViewModel::openBestNavigation,
-                    onLaunchApp = headunitViewModel::launchInstalledApp,
-                    onBack = { headunitViewModel.navigateTo(CarPlaySurfacePage.DASHBOARD) }
-                )
-            }
-
-            CarPlaySurfacePage.PHONE -> {
-                CarPlayPhoneScreen(
-                    palette = palette,
-                    onCallNumber = headunitViewModel::openDialer,
-                    onOpenMessages = headunitViewModel::openMessages,
-                    onBack = { headunitViewModel.navigateTo(CarPlaySurfacePage.DASHBOARD) }
-                )
-            }
-
-            CarPlaySurfacePage.EQUALIZER -> {
-                BackHandler {
-                    headunitViewModel.navigateTo(CarPlaySurfacePage.DASHBOARD)
-                }
-                CarPlayGlassCard(
-                    palette = palette,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(10.dp)
-                ) {
-                    EqualizerScreen(
-                        equalizerState = equalizerState,
-                        onSetEnabled = playerViewModel::setEqualizerEnabled,
-                        onSelectPreset = playerViewModel::selectEqualizerPreset,
-                        onSetBandLevel = playerViewModel::setEqualizerBand,
-                        onSetPreampDb = playerViewModel::setPreampDb,
-                        onSetBassBoostPercent = playerViewModel::setBassBoostPercent,
-                        onSetPlaybackSpeed = playerViewModel::setMedia3PlaybackSpeed,
-                        onSetSkipSilence = playerViewModel::setMedia3SkipSilence,
-                        onReset = playerViewModel::resetEqualizer
-                    )
-                }
-            }
-
-            CarPlaySurfacePage.CAR_APPS -> {
-                CarPlayInstalledAppsScreen(
-                    palette = palette,
-                    installedApps = installedApps,
-                    onLaunchApp = headunitViewModel::launchInstalledApp,
-                    onBack = { headunitViewModel.navigateTo(CarPlaySurfacePage.APP_GRID) }
-                )
-            }
-
-            CarPlaySurfacePage.SETTINGS -> {
-                CarPlaySettingsScreen(
-                    palette = palette,
-                    settings = hurSettings,
-                    localIp = localIp,
-                    usbState = usbState,
-                    onUpdateMode = headunitViewModel::updateConnectionMode,
-                    onUpdateHostIp = headunitViewModel::updateClientHostIp,
-                    onUpdatePort = headunitViewModel::updatePort,
-                    onUpdateResolution = headunitViewModel::updateResolution,
-                    onUpdateDpi = headunitViewModel::updateDpi,
-                    onUpdateFps = headunitViewModel::updateTargetFps,
-                    onUpdateCarPlayTheme = headunitViewModel::updateCarPlayTheme,
-                    onUpdateDockSide = headunitViewModel::updateDockSide,
-                    onUpdateHardwareDecode = headunitViewModel::updateHardwareDecode,
-                    onUpdateMicPassthrough = onRequestMic,
-                    onUpdateKeepScreenOn = headunitViewModel::updateKeepScreenOn,
-                    onUpdateImmersiveMode = headunitViewModel::updateImmersiveMode,
-                    onRefreshUsb = headunitViewModel::refreshUsbDevices,
-                    onLaunchProjection = {
-                        headunitViewModel.startReceiver()
-                        headunitViewModel.navigateTo(CarPlaySurfacePage.AA_PROJECTION)
-                    },
-                    onBack = { headunitViewModel.navigateTo(CarPlaySurfacePage.DASHBOARD) }
+                    onTogglePlayPause = viewModel::togglePlayPause,
+                    onSkipNext = viewModel::skipNext,
+                    onSkipPrevious = viewModel::skipPrevious,
+                    onSeekTo = viewModel::seekTo,
+                    onToggleShuffle = viewModel::toggleShuffle,
+                    onCycleRepeat = viewModel::cycleRepeatMode,
+                    onToggleFavorite = { viewModel.toggleFavorite(activeTrack) }
                 )
             }
         }

@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/ic_carplay_hur_fg_1794554519339"
+        android:drawable="@drawable/ic_ava_music_fg_1794792983705"
         android:gravity="center" />
 </layer-list>

@@ -1,115 +1,36 @@
 <resources>
-    <string name="app_name">CarPlay HUR</string>
-    <string name="nav_home">خانه</string>
-    <string name="nav_online">آنلاین</string>
-    <string name="nav_library">کتابخانه</string>
-    <string name="nav_equalizer">اکولایزر</string>
-    <string name="nav_playlists">پلی‌لیست</string>
-    <string name="nav_auto">اتو</string>
-
-    <string name="carplay_dashboard_title">داشبورد کارپلی</string>
-    <string name="carplay_apps_title">اپلیکیشن‌ها</string>
-    <string name="carplay_aa_stream_title">اندروید اتو (HUR)</string>
-    <string name="carplay_music_title">موزیک</string>
-    <string name="carplay_maps_title">نقشه و GPS</string>
-    <string name="carplay_phone_title">تلفن</string>
-    <string name="carplay_messages_title">پیام‌ها</string>
-    <string name="carplay_equalizer_title">اکولایزر</string>
-    <string name="carplay_all_apps_title">برنامه‌های گوشی</string>
-    <string name="carplay_settings_title">تنظیمات HUR</string>
-
-    <string name="hur_mode_self">حالت خودکار (Self Mode)</string>
-    <string name="hur_mode_wifi_server">سرور وای‌فای (:5277)</string>
-    <string name="hur_mode_wifi_client">اتصال به IP وای‌فای</string>
-    <string name="hur_mode_usb">کابل USB (AOAP)</string>
-    <string name="hur_start_receiver">شروع دریافت اندروید اتو</string>
-    <string name="hur_stop_receiver">قطع اتصال</string>
-    <string name="hur_settings_graphics">تنظیمات تصویر و کارپلی</string>
-    <string name="hur_settings_connectivity">اتصال و شبکه (HUR)</string>
-    <string name="hur_settings_audio">صدا، میکروفون و نمایشگر</string>
-
-    <string name="online_title">موزیک آنلاین</string>
-    <string name="online_subtitle">دریافت و پخش مستقیم موزیک‌های جدید از سایت‌های ایرانی و وب بدون سرور</string>
-    <string name="online_mode_iranian">سایت‌های ایرانی</string>
-    <string name="online_mode_global">موزیک جهانی</string>
-    <string name="online_search_hint">جستجوی نام آهنگ یا خواننده…</string>
-    <string name="online_loading">در حال دریافت جدیدترین آهنگ‌ها…</string>
-    <string name="online_error_title">خطا در دریافت لیست موزیک‌ها</string>
-    <string name="online_retry">تلاش مجدد</string>
-    <string name="online_save_to_library">ذخیره در کتابخانه</string>
-    <string name="online_live_badge">استریم آنلاین</string>
-
-    <string name="hero_badge">آماده اتصال به خودرو</string>
-    <string name="hero_title">موسیقی‌های دستگاه شما</string>
-    <string name="hero_subtitle">پخش خودکار آهنگ‌های حافظه گوشی در موبایل و نمایشگر اندروید اتو</string>
-    <string name="action_play_driving_mix">پخش لیست دستگاه</string>
-    <string name="action_car_mode">حالت رانندگی</string>
-    <string name="action_import_audio">افزودن دستی فایل صوتی</string>
-    <string name="action_scan_device_music">اسکن موزیک‌های دستگاه</string>
-
-    <string name="section_featured_albums">آلبوم‌های دستگاه</string>
-    <string name="section_quick_tracks">لیست پخش دستگاه</string>
-    <string name="section_recent_plays">آهنگ‌های اخیر</string>
-
-    <string name="search_hint">جستجوی آهنگ، هنرمند یا آلبوم…</string>
+    <string name="app_name">Ava Music</string>
+    <string name="music_player_title">پخش‌کننده آوا</string>
+    <string name="search_hint">جستجوی نام آهنگ یا خواننده…</string>
     <string name="filter_all">همه آهنگ‌ها</string>
     <string name="filter_favorites">علاقه‌مندی‌ها</string>
-    <string name="filter_imported">افزوده‌شده</string>
-
-    <string name="empty_favorites_title">هنوز آهنگ محبوبی ندارید</string>
-    <string name="empty_favorites_subtitle">روی آیکون قلب کنار هر آهنگ بزنید تا در این بخش و اندروید اتو نمایش داده شود.</string>
-    <string name="empty_device_music_title">هنوز آهنگی در لیست پخش نیست</string>
-    <string name="empty_device_music_subtitle">برای افزودن خودکار تمام موسیقی‌های حافظه گوشی به لیست پخش، دکمه اسکن موزیک‌های دستگاه را بزنید.</string>
-    <string name="empty_search_title">نتیجه‌ای پیدا نشد</string>
-    <string name="empty_search_subtitle">عبارت دیگری جستجو کنید یا از حافظه دستگاه آهنگ اضافه نمایید.</string>
-    <string name="empty_playlist_title">پلی‌لیست خالی است</string>
-    <string name="empty_playlist_subtitle">از کتابخانه، آهنگ‌های دلخواه خود را به این پلی‌لیست اضافه کنید.</string>
-
-    <string name="action_create_playlist">ساخت پلی‌لیست جدید</string>
-    <string name="playlist_name_label">نام پلی‌لیست</string>
-    <string name="playlist_name_placeholder">مثلاً: جاده شمال</string>
-    <string name="action_create">ساختن</string>
-    <string name="action_cancel">انصراف</string>
-    <string name="action_delete">حذف</string>
-    <string name="action_add_to_playlist">افزودن به پلی‌لیست</string>
-    <string name="action_play_next">پخش بعدی</string>
-
-    <string name="now_playing_title">در حال پخش</string>
-    <string name="queue_title">صف پخش</string>
-    <string name="equalizer_title">اکولایزر ۵ بانده</string>
-    <string name="equalizer_subtitle">پردازشگر صوتی زنده Media3 DSP</string>
-    <string name="equalizer_reset">بازنشانی</string>
-    <string name="equalizer_media3_settings">تنظیمات صدای Media3</string>
-    <string name="equalizer_preamp">پیش‌تقویت صدا (Preamp)</string>
-    <string name="equalizer_bass_boost">تقویت فرکانس‌های بم (Bass Boost)</string>
-    <string name="equalizer_playback_speed">سرعت پخش Media3</string>
-    <string name="equalizer_skip_silence">حذف سکوت بین جملات (Skip Silence)</string>
-    <string name="sleep_timer_title">تایمر خواب</string>
-    <string name="sleep_timer_off">خاموش</string>
-
-    <string name="auto_hub_title">مرکز اندروید اتو و خودرو</string>
-    <string name="auto_service_active">سرویس MediaLibraryService فعال و آماده کشف توسط Android Auto است</string>
-    <string name="auto_browse_preview_title">ساختار منوی اندروید اتو</string>
-    <string name="auto_browse_preview_subtitle">دسته‌بندی‌هایی که روی نمایشگر خودرو نمایش داده می‌شوند</string>
-    <string name="auto_voice_hint">پشتیبانی از جستجوی صوتی Google Assistant در خودرو</string>
-
-    <string name="auto_tab_all_songs">همه آهنگ‌ها</string>
-    <string name="auto_tab_albums">آلبوم‌ها</string>
-    <string name="auto_tab_favorites">علاقه‌مندی‌ها</string>
-    <string name="auto_tab_playlists">پلی‌لیست‌ها</string>
-    <string name="auto_action_favorite">علاقه‌مندی</string>
-    <string name="auto_action_shuffle">پخش تصادفی</string>
-
+    <string name="action_scan_music">اسکن آهنگ‌های گوشی</string>
+    <string name="action_add_files">افزودن فایل صوتی</string>
+    <string name="empty_title">هنوز آهنگی اضافه نشده است</string>
+    <string name="empty_subtitle">برای پخش موسیقی، آهنگ‌های حافظه گوشی را اسکن کنید یا یک فایل صوتی انتخاب نمایید.</string>
+    <string name="empty_favorites_title">آهنگ مورد علاقه‌ای ثبت نشده است</string>
+    <string name="empty_favorites_subtitle">روی آیکون قلب کنار هر آهنگ بزنید تا در لیست علاقه‌مندی‌ها ذخیره شود.</string>
     <string name="cd_play">پخش</string>
     <string name="cd_pause">توقف</string>
     <string name="cd_next">آهنگ بعدی</string>
     <string name="cd_previous">آهنگ قبلی</string>
-    <string name="cd_favorite">افزودن به علاقه‌مندی‌ها</string>
-    <string name="cd_unfavorite">حذف از علاقه‌مندی‌ها</string>
     <string name="cd_shuffle">پخش تصادفی</string>
     <string name="cd_repeat">تکرار</string>
+    <string name="cd_favorite">علاقه‌مندی</string>
+    <string name="cd_album_art">کاور آهنگ</string>
     <string name="cd_back">بازگشت</string>
-    <string name="cd_album_art">کاور آلبوم</string>
-    <string name="cd_close">بستن</string>
-    <string name="cd_more_options">گزینه‌های بیشتر</string>
+    <string name="tab_library">کتابخانه من</string>
+    <string name="tab_trending">ترند اینستا</string>
+    <string name="trending_title">ترندهای اینستاگرام از سایت‌های ایرانی</string>
+    <string name="trending_subtitle">الگوبرداری از ترند ریلز و استوری اینستا از سایت‌های موزیک ایرانی</string>
+    <string name="trending_sources_caption">منابع ایرانی: موزیک وب • ریمیکس‌گرام • آپ موزیک • رز موزیک • موزیکفا • موزیکدل • نیک موزیک</string>
+    <string name="trending_search_hint">جستجوی آهنگ یا ریمیکس ترند در سایت‌های ایرانی…</string>
+    <string name="trending_refresh">به‌روزرسانی ترندهای اینستا</string>
+    <string name="trending_loading">در حال جستجو در سایت‌های موزیک ایرانی با الگوی ترند اینستاگرام…</string>
+    <string name="trending_empty_title">آهنگ یا ریمیکسی پیدا نشد</string>
+    <string name="trending_empty_subtitle">اتصال اینترنت را بررسی کنید یا عبارت جستجو و فیلتر را تغییر دهید.</string>
+    <string name="trending_retry">تلاش مجدد</string>
+    <string name="badge_remix">ریمیکس</string>
+    <string name="badge_insta_trend">ترند اینستا</string>
+    <string name="badge_full_stream">پخش کامل MP3</string>
 </resources>

@@ -1,6 +1,6 @@
 {
-  "name": "CarPlay HUR",
-  "description": "گیرنده اندروید اتو (مشابه Headunit Reloaded) با رابط کاربری Apple CarPlay، پشتیبانی از USB AOAP، وای‌فای و حالت خودکار همراه با پخش‌کننده موزیک و سرعت‌سنج GPS",
+  "name": "Ava Music",
+  "description": "پخش‌کننده موسیقی ساده، سبک و زیبا برای پخش آهنگ‌های حافظه دستگاه",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

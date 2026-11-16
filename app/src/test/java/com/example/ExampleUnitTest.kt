@@ -1,146 +1,124 @@
 package com.example
 
-import androidx.media3.common.C
-import androidx.media3.common.audio.AudioProcessor.AudioFormat
-import com.example.audio.EqualizerController
-import com.example.audio.Media3EqualizerAudioProcessor
-import com.example.data.model.EqualizerPreset
-import com.example.data.remote.OnlineMusicRepository
+import com.example.player.IranianMusicSite
+import com.example.player.RepeatModeOption
+import com.example.player.TrackFilter
+import com.example.player.TrendingCategory
+import com.example.player.TrendingIranianRepository
+import com.example.player.TrendingPreset
+import com.example.ui.components.formatDuration
+import com.example.ui.components.formatPlayCount
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 class ExampleUnitTest {
 
     @Test
-    fun `equalizer controller switches to CUSTOM when frequency band is modified`() {
-        EqualizerController.applyPreset(EqualizerPreset.FLAT)
-        assertEquals(EqualizerPreset.FLAT, EqualizerController.state.value.selectedPreset)
-
-        EqualizerController.setBandLevel(0, 600) // +6.0 dB at 60Hz
-        val state = EqualizerController.state.value
-        assertEquals(EqualizerPreset.CUSTOM, state.selectedPreset)
-        assertEquals(5, state.bands.size)
-        assertEquals(600, state.bands[0].levelMb)
-        assertEquals("60Hz", state.bands[0].frequencyLabel)
+    fun `formatDuration and formatPlayCount format cleanly`() {
+        assertEquals("00:00", formatDuration(0L))
+        assertEquals("01:05", formatDuration(65_000L))
+        assertEquals("03:45", formatDuration(225_000L))
+        assertEquals("850", formatPlayCount(850L))
+        assertEquals("12.5K", formatPlayCount(12_500L))
+        assertEquals("1.4M", formatPlayCount(1_400_000L))
     }
 
     @Test
-    fun `media3 equalizer audio processor processes 16-bit PCM frames`() {
-        val processor = Media3EqualizerAudioProcessor
-        val format = AudioFormat(44100, 2, C.ENCODING_PCM_16BIT)
-        val configured = processor.configure(format)
-        assertEquals(44100, configured.sampleRate)
-        assertEquals(2, configured.channelCount)
-
-        processor.updateParameters(
-            isEnabled = true,
-            bandLevelsMb = listOf(800, 0, 0, 0, 400),
-            preampDb = 2.0f,
-            bassBoostPercent = 50
+    fun `persian title parser extracts artist and clean song name`() {
+        val parsed = TrendingIranianRepository.parsePersianPostTitle(
+            "دانلود آهنگ جدید ترند اینستاگرام شادمهر عقیلی بنام قلبم با کیفیت 320 و 128",
+            "موزیک وب"
         )
-        processor.flush()
+        assertEquals("شادمهر عقیلی", parsed.artist)
+        assertEquals("قلبم", parsed.title)
 
-        val input = ByteBuffer.allocateDirect(128).order(ByteOrder.nativeOrder())
-        for (i in 0 until 64) {
-            input.putShort(((i % 16) * 500).toShort())
-        }
-        input.flip()
-
-        processor.queueInput(input)
-        val output = processor.output
-        assertEquals(128, output.remaining())
-        assertTrue(output.order() == ByteOrder.nativeOrder())
+        val dashParsed = TrendingIranianRepository.parsePersianPostTitle(
+            "دانلود ریمیکس جدید مهراد هیدن – کجا میری ترند اینستاگرام",
+            "ریمیکس‌گرام"
+        )
+        assertEquals("مهراد هیدن", dashParsed.artist)
+        assertEquals("کجا میری", dashParsed.title)
     }
 
     @Test
-    fun `online music repository parses Audius trending tracks and filters non-streamable entries`() {
-        val repository = OnlineMusicRepository()
-        val sampleJson = """
-            {
-              "data": [
-                {
-                  "id": "track123",
-                  "title": "Midnight Pulse",
-                  "genre": "Electronic",
-                  "duration": 215,
-                  "is_streamable": true,
-                  "artwork": {
-                    "150x150": "https://img.example/150.jpg",
-                    "480x480": "https://img.example/480.jpg"
-                  },
-                  "user": {
-                    "name": "Aria Synth",
-                    "handle": "ariasynth"
-                  },
-                  "extra_ignored_field": 42
-                },
-                {
-                  "id": "track999",
-                  "title": "Blocked Track",
-                  "duration": 100,
-                  "is_streamable": false
-                }
-              ]
-            }
-        """.trimIndent()
+    fun `wordpress json and html parsers extract iranian mp3s with instagram trend scoring`() {
+        val siteA = IranianMusicSite("musicsweb", "موزیک وب", "https://musicsweb.ir")
+        val siteB = IranianMusicSite("remixgram", "ریمیکس‌گرام", "https://remixgram.com")
 
-        val tracks = repository.parseAudiusTrendingJson("https://api.audius.co", sampleJson)
-        assertEquals(1, tracks.size)
-        val track = tracks.first()
-        assertEquals("online_track123", track.id)
-        assertEquals("Midnight Pulse", track.title)
-        assertEquals("Aria Synth", track.artist)
-        assertEquals(215_000L, track.durationMs)
-        assertEquals("https://api.audius.co/v1/tracks/track123/stream?app_name=AvaPlayer", track.mediaUri)
-        assertEquals("https://img.example/480.jpg", track.artworkUri)
-    }
-
-    @Test
-    fun `online music repository parses Iranian WordPress posts and RSS feeds`() {
-        val repository = OnlineMusicRepository()
         val wpJson = """
             [
               {
-                "id": 4512,
-                "link": "https://music-fa.com/post-4512",
-                "title": { "rendered": "دانلود آهنگ جدید محسن چاوشی به نام شب بارانی" },
+                "id": 101,
+                "date": "2026-11-10T12:00:00",
+                "title": { "rendered": "دانلود ریمیکس ترند اینستاگرام علیرضا طلیسچی بنام شبای تهران" },
                 "content": {
-                  "rendered": "<p><img src=\"https://music-fa.com/wp-content/uploads/cover.jpg\" /><a href=\"https://dls.music-fa.com/song-320.mp3\">320</a><a href=\"https://dls.music-fa.com/song-128.mp3\">128</a></p>"
-                }
-              },
-              {
-                "id": 4513,
-                "link": "https://music-fa.com/post-no-mp3",
-                "title": { "rendered": "پست بدون فایل صوتی" },
-                "content": { "rendered": "<p>متن خبر</p>" }
+                  "rendered": "<p><img src=\"https://musicsweb.ir/uploads/cover1.jpg\" /></p><a href=\"https://dl.musicsweb.ir/music/shabaye-tehran-remix-128.mp3\">128</a><a href=\"https://dl.musicsweb.ir/music/shabaye-tehran-remix-320.mp3\">320</a>"
+                },
+                "excerpt": { "rendered": "<p>ریمیکس وایرال ریلز اینستاگرام</p>" }
               }
             ]
         """.trimIndent()
 
-        val wpTracks = repository.parseWpPostsJson("موزیک‌فا", wpJson)
+        val wpTracks = TrendingIranianRepository.parseWordPressPostsJson(
+            rawJson = wpJson,
+            site = siteA,
+            preset = TrendingPreset.HOT,
+            favoriteIds = setOf("ir_musicsweb_101")
+        )
         assertEquals(1, wpTracks.size)
-        val first = wpTracks.first()
-        assertEquals("شب بارانی", first.title)
-        assertTrue(first.artist.contains("محسن چاوشی"))
-        assertEquals("https://dls.music-fa.com/song-128.mp3", first.mediaUri)
-        assertEquals("https://music-fa.com/wp-content/uploads/cover.jpg", first.artworkUri)
+        assertTrue(wpTracks[0].isRemix)
+        assertTrue(wpTracks[0].isInstaTrend)
+        assertTrue(wpTracks[0].isFavorite)
+        assertEquals("موزیک وب", wpTracks[0].sourceLabel)
+        assertEquals("https://dl.musicsweb.ir/music/shabaye-tehran-remix-320.mp3", wpTracks[0].mediaUri)
 
-        val rssXml = """
-            <rss><channel>
-              <item>
-                <title><![CDATA[دانلود آهنگ رضا بهرام – گل عشق]]></title>
-                <description><![CDATA[<img src="https://rozmusic.com/cover.webp"/><a href="https://dl.rozmusic.com/gol-320.mp3">Download</a>]]></description>
-              </item>
-            </channel></rss>
+        val postHtml = """
+            <html>
+              <head>
+                <meta property="og:image" content="https://remixgram.com/uploads/art2.jpg" />
+                <meta property="article:published_time" content="2026-11-12T10:00:00+03:30" />
+              </head>
+              <body>
+                <h1>دانلود آهنگ ترند اینستاگرام رضا بهرام بنام دیوانه</h1>
+                <audio controls><source src="https://dl.remixgram.com/tracks/divaneh-320.mp3" type="audio/mpeg" /></audio>
+              </body>
+            </html>
         """.trimIndent()
 
-        val rssTracks = repository.parseIranianRssFeed("رزموزیک", rssXml)
-        assertEquals(1, rssTracks.size)
-        assertEquals("گل عشق", rssTracks.first().title)
-        assertTrue(rssTracks.first().artist.contains("رضا بهرام"))
-        assertEquals("https://dl.rozmusic.com/gol-320.mp3", rssTracks.first().mediaUri)
+        val htmlTrack = TrendingIranianRepository.parseSinglePostHtml(
+            postHtml = postHtml,
+            postUrl = "https://remixgram.com/divaneh/",
+            site = siteB,
+            preset = TrendingPreset.HOT
+        )
+        assertNotNull(htmlTrack)
+        assertEquals("دیوانه", htmlTrack!!.title)
+        assertEquals("رضا بهرام", htmlTrack.artist)
+        assertFalse(htmlTrack.isRemix)
+        assertTrue(htmlTrack.isInstaTrend)
+
+        val remixesOnly = TrendingIranianRepository.deduplicateAndRank(
+            wpTracks + htmlTrack,
+            TrendingCategory.REMIXES
+        )
+        assertEquals(1, remixesOnly.size)
+        assertEquals("ir_musicsweb_101", remixesOnly[0].id)
+    }
+
+    @Test
+    fun `configured trending sources are strictly iranian music sites`() {
+        assertTrue(TrendingIranianRepository.IRANIAN_SITES.isNotEmpty())
+        assertTrue(
+            TrendingIranianRepository.IRANIAN_SITES.none { site ->
+                site.baseUrl.contains("audius") ||
+                    site.baseUrl.contains("deezer") ||
+                    site.baseUrl.contains("apple")
+            }
+        )
+        assertEquals(2, TrackFilter.entries.size)
+        assertEquals(3, RepeatModeOption.entries.size)
     }
 }
