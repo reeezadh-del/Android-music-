@@ -346,20 +346,6 @@ fun TrendingTrackRowItem(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (track.sourceLabel.isNotBlank()) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Text(
-                            text = track.sourceLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
                 if (track.isInstaTrend) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -627,11 +613,7 @@ fun FullNowPlayingSheet(
                         )
                         Text(
                             text = buildString {
-                                if (track.sourceLabel.isNotBlank()) {
-                                    append(track.sourceLabel)
-                                    append(" • ")
-                                }
-                                if (track.isRemix) append("ریمیکس ")
+                                if (track.isRemix) append("ریمیکس • ")
                                 append(if (track.isInstaTrend) "ترند اینستا" else "پخش آنلاین")
                             },
                             style = MaterialTheme.typography.labelMedium,

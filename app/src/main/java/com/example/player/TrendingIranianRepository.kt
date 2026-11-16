@@ -324,7 +324,23 @@ class TrendingIranianRepository(
             val artist: String
         )
 
-        fun parsePersianPostTitle(rawTitle: String, fallbackSiteName: String): ParsedTitleArtist {
+        private val SITE_NOISE_WORDS = listOf(
+            "موزیک وب", "اپ موزیک", "آپ موزیک", "رز موزیک", "موزیکفا", "موزیک فا",
+            "موزیکدل", "موزیک دل", "نیک موزیک", "ریمیکس گرام", "ریمیکس‌گرام", "نکس وان",
+            "musicsweb", "upmusics", "rozmusic", "musics-fa", "music-fa", "musicdel", "nicmusic", "remixgram"
+        )
+
+        private val GENERIC_ARTISTS = setOf("هنرمند ایرانی", "دی‌جی ریمیکس", "هنرمند ناشناس", "")
+
+        private val FILLER_TOKENS = setOf(
+            "دانلود", "اهنگ", "آهنگ", "موزیک", "جدید", "بنام", "به", "نام",
+            "ریمیکس", "میکس", "اینستاگرام", "اینستا", "ترند", "ریلز", "استوری",
+            "چالش", "وایرال", "کامل", "اصلی", "ورژن", "نسخه", "شاد", "غمگین",
+            "بیس", "دار", "اسلو", "remix", "rmx", "mp3", "original", "version",
+            "dj", "instagram", "reels", "viral", "trend", "slowed", "320", "128"
+        )
+
+        fun parsePersianPostTitle(rawTitle: String, isRemix: Boolean = false): ParsedTitleArtist {
             var cleaned = decodeHtmlEntities(rawTitle)
             val prefixes = listOf(
                 "دانلود آهنگ جدید",
@@ -344,11 +360,22 @@ class TrendingIranianRepository(
                     cleaned = cleaned.removePrefix(prefix).trim()
                 }
             }
+            for (siteNoise in SITE_NOISE_WORDS) {
+                cleaned = cleaned
+                    .replace("از سایت $siteNoise", "", ignoreCase = true)
+                    .replace("در سایت $siteNoise", "", ignoreCase = true)
+                    .replace("از رسانه $siteNoise", "", ignoreCase = true)
+                    .replace("از $siteNoise", "", ignoreCase = true)
+                    .replace("در $siteNoise", "", ignoreCase = true)
+                    .replace("سایت $siteNoise", "", ignoreCase = true)
+                    .replace(siteNoise, "", ignoreCase = true)
+            }
             cleaned = cleaned
                 .replace("ترند اینستاگرام", "")
                 .replace("ترند اینستا", "")
                 .replace("اینستاگرام", "")
                 .replace("با کیفیت 320 و 128", "")
+                .replace("با کیفیت ۳۲۰ و ۱۲۸", "")
                 .replace("با کیفیت ۳۲۰", "")
                 .replace("+ متن", "")
                 .replace("+ پخش آنلاین", "")
@@ -374,10 +401,43 @@ class TrendingIranianRepository(
                 )
             }
 
+            val fallbackArtist = if (isRemix) "دی‌جی ریمیکس" else "هنرمند ایرانی"
             return ParsedTitleArtist(
                 title = cleaned.ifBlank { "آهنگ ترند اینستا" },
-                artist = fallbackSiteName
+                artist = fallbackArtist
             )
+        }
+
+        fun normalizePersianText(input: String): String {
+            val unified = decodeHtmlEntities(input)
+                .lowercase()
+                .replace('ك', 'ک')
+                .replace('ي', 'ی')
+                .replace('ى', 'ی')
+                .replace('ة', 'ه')
+                .replace('أ', 'ا')
+                .replace('إ', 'ا')
+                .replace('آ', 'ا')
+                .replace("\u200C", " ")
+                .replace("\u0640", "")
+                .replace(Regex("[\u064B-\u065F\u0670]"), "")
+                .replace(Regex("\\([^)]*\\)|\\[[^]]*]"), " ")
+                .replace(Regex("[^\\p{L}\\p{Nd}\\s]"), " ")
+
+            return unified
+                .split(Regex("\\s+"))
+                .filter { token -> token.isNotBlank() && token !in FILLER_TOKENS }
+                .joinToString(" ")
+                .trim()
+        }
+
+        private fun extractMp3CanonicalFile(mediaUri: String): String {
+            val path = mediaUri.substringBefore('?').substringAfterLast('/').lowercase()
+            return path
+                .removeSuffix(".mp3")
+                .removeSuffix(".m4a")
+                .replace(Regex("[-_](?:320|128|192|256)$"), "")
+                .trim()
         }
 
         fun pickBestMp3Url(html: String): String? {
@@ -438,8 +498,7 @@ class TrendingIranianRepository(
             }
 
             if (!dateIso.isNullOrBlank()) {
-                val recencyBonus = computeRecencyBonus(dateIso)
-                score += recencyBonus
+                score += computeRecencyBonus(dateIso)
             }
 
             return score
@@ -497,14 +556,14 @@ class TrendingIranianRepository(
                 val combinedText = "$titleHtml ${decodeHtmlEntities(excerptHtml)}"
                 val isRemix = detectIsRemix(combinedText)
                 val isInstaTrend = detectIsInstaTrend(combinedText)
-                val parsed = parsePersianPostTitle(titleHtml, site.nameFa)
+                val parsed = parsePersianPostTitle(titleHtml, isRemix)
                 val trackId = "ir_${site.id}_$postId"
 
                 MusicTrack(
                     id = trackId,
                     title = parsed.title,
                     artist = parsed.artist,
-                    album = site.nameFa,
+                    album = if (isRemix) "ریمیکس ترند اینستا" else "ترند اینستا",
                     durationMs = 0L,
                     mediaUri = mp3Url,
                     artworkUri = artworkUrl,
@@ -514,7 +573,7 @@ class TrendingIranianRepository(
                     isRemix = isRemix,
                     isInstaTrend = isInstaTrend,
                     isFullTrack = true,
-                    sourceLabel = site.nameFa,
+                    sourceLabel = "",
                     playCount = 0L,
                     trendScore = computeInstagramTrendScore(combinedText, isRemix, preset, dateIso)
                 )
@@ -538,14 +597,14 @@ class TrendingIranianRepository(
                 val plainBlock = decodeHtmlEntities(block)
                 val isRemix = detectIsRemix("$rawTitle $plainBlock")
                 val isInstaTrend = detectIsInstaTrend("$rawTitle $plainBlock")
-                val parsed = parsePersianPostTitle(rawTitle, site.nameFa)
+                val parsed = parsePersianPostTitle(rawTitle, isRemix)
                 val trackId = "ir_${site.id}_${mp3Url.hashCode().toUInt()}"
                 results.add(
                     MusicTrack(
                         id = trackId,
                         title = parsed.title,
                         artist = parsed.artist,
-                        album = site.nameFa,
+                        album = if (isRemix) "ریمیکس ترند اینستا" else "ترند اینستا",
                         durationMs = 0L,
                         mediaUri = mp3Url,
                         artworkUri = artwork,
@@ -555,7 +614,7 @@ class TrendingIranianRepository(
                         isRemix = isRemix,
                         isInstaTrend = isInstaTrend,
                         isFullTrack = true,
-                        sourceLabel = site.nameFa,
+                        sourceLabel = "",
                         playCount = 0L,
                         trendScore = computeInstagramTrendScore("$rawTitle $plainBlock", isRemix, preset)
                     )
@@ -616,14 +675,14 @@ class TrendingIranianRepository(
             val decodedTitle = decodeHtmlEntities(rawTitle)
             val isRemix = detectIsRemix(decodedTitle)
             val isInstaTrend = detectIsInstaTrend(decodedTitle) || postUrl.contains("instagram", ignoreCase = true)
-            val parsed = parsePersianPostTitle(decodedTitle, site.nameFa)
+            val parsed = parsePersianPostTitle(decodedTitle, isRemix)
             val trackId = "ir_${site.id}_${mp3Url.hashCode().toUInt()}"
 
             return MusicTrack(
                 id = trackId,
                 title = parsed.title,
                 artist = parsed.artist,
-                album = site.nameFa,
+                album = if (isRemix) "ریمیکس ترند اینستا" else "ترند اینستا",
                 durationMs = 0L,
                 mediaUri = mp3Url,
                 artworkUri = artworkUrl,
@@ -633,10 +692,53 @@ class TrendingIranianRepository(
                 isRemix = isRemix,
                 isInstaTrend = isInstaTrend,
                 isFullTrack = true,
-                sourceLabel = site.nameFa,
+                sourceLabel = "",
                 playCount = 0L,
                 trendScore = computeInstagramTrendScore(decodedTitle, isRemix, preset, dateIso)
             )
+        }
+
+        private data class CanonicalFingerprint(
+            val track: MusicTrack,
+            val normTitle: String,
+            val normArtist: String,
+            val combinedSortedTokens: List<String>,
+            val mp3FileKey: String,
+            val siteKeys: MutableSet<String>
+        )
+
+        private fun isDuplicateTrack(a: CanonicalFingerprint, b: CanonicalFingerprint): Boolean {
+            if (a.track.mediaUri == b.track.mediaUri) return true
+            if (a.mp3FileKey.length >= 5 && a.mp3FileKey == b.mp3FileKey) return true
+
+            // Same sorted tokens across (title + artist), catching swapped Artist/Title order
+            if (a.combinedSortedTokens.isNotEmpty() && a.combinedSortedTokens == b.combinedSortedTokens) {
+                return true
+            }
+
+            // Same normalized title
+            if (a.normTitle.isNotBlank() && a.normTitle == b.normTitle) {
+                if (a.normArtist.isBlank() || b.normArtist.isBlank() || a.normArtist == b.normArtist) {
+                    return true
+                }
+                val artistTokensA = a.normArtist.split(' ').filter { it.length >= 2 }.toSet()
+                val artistTokensB = b.normArtist.split(' ').filter { it.length >= 2 }.toSet()
+                if (artistTokensA.intersect(artistTokensB).isNotEmpty()) {
+                    return true
+                }
+            }
+
+            // Containment check when artists match (or one is generic) and shorter title >= 4 chars
+            val sameOrGenericArtist = a.normArtist.isBlank() || b.normArtist.isBlank() || a.normArtist == b.normArtist
+            if (sameOrGenericArtist && a.normTitle.length >= 4 && b.normTitle.length >= 4) {
+                val shorter = if (a.normTitle.length <= b.normTitle.length) a.normTitle else b.normTitle
+                val longer = if (a.normTitle.length > b.normTitle.length) a.normTitle else b.normTitle
+                if (longer.contains(shorter)) {
+                    return true
+                }
+            }
+
+            return false
         }
 
         fun deduplicateAndRank(
@@ -649,31 +751,74 @@ class TrendingIranianRepository(
                 TrendingCategory.REMIXES -> rawTracks.filter { it.isRemix }
             }.ifEmpty { rawTracks }
 
-            // Multi-site consensus bonus: tracks trending across multiple Iranian music sites
-            // get an Instagram viral consensus boost.
-            val siteCounts = mutableMapOf<String, MutableSet<String>>()
-            for (track in filtered) {
-                val key = track.title.lowercase().trim()
-                siteCounts.getOrPut(key) { mutableSetOf() }.add(track.sourceLabel)
-            }
+            val accepted = mutableListOf<CanonicalFingerprint>()
+            val sortedCandidates = filtered.sortedWith(
+                compareByDescending<MusicTrack> { it.isInstaTrend }
+                    .thenByDescending { it.trendScore }
+                    .thenByDescending { it.artist !in GENERIC_ARTISTS }
+                    .thenByDescending { it.artworkUri.isNotBlank() }
+            )
 
-            val uniqueByKey = LinkedHashMap<String, MusicTrack>()
-            for (track in filtered.sortedByDescending { it.trendScore }) {
-                val normKey = "${track.title.lowercase().trim()}|${track.artist.lowercase().trim()}"
-                val extraSites = ((siteCounts[track.title.lowercase().trim()]?.size ?: 1) - 1).coerceAtLeast(0)
-                val boosted = track.copy(trendScore = track.trendScore + (extraSites * 20_000L))
-                val existing = uniqueByKey[normKey]
-                if (existing == null || boosted.trendScore > existing.trendScore) {
-                    uniqueByKey[normKey] = boosted
+            for (track in sortedCandidates) {
+                val normTitle = normalizePersianText(track.title)
+                val normArtist = if (track.artist in GENERIC_ARTISTS) "" else normalizePersianText(track.artist)
+                val combinedTokens = ("$normTitle $normArtist")
+                    .split(' ')
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+                val siteKey = track.id.substringAfter("ir_", "").substringBefore('_', track.mediaUri)
+                val candidateFp = CanonicalFingerprint(
+                    track = track,
+                    normTitle = normTitle,
+                    normArtist = normArtist,
+                    combinedSortedTokens = combinedTokens,
+                    mp3FileKey = extractMp3CanonicalFile(track.mediaUri),
+                    siteKeys = mutableSetOf(siteKey)
+                )
+
+                val existingIndex = accepted.indexOfFirst { isDuplicateTrack(it, candidateFp) }
+                if (existingIndex < 0) {
+                    accepted.add(candidateFp)
+                } else {
+                    val existing = accepted[existingIndex]
+                    val isNewSite = existing.siteKeys.add(siteKey)
+                    val consensusBoost = if (isNewSite) 20_000L else 0L
+                    val mergedTrack = chooseBetterMetadata(existing.track, track).let { chosen ->
+                        chosen.copy(
+                            trendScore = maxOf(existing.track.trendScore, track.trendScore) + consensusBoost,
+                            isFavorite = existing.track.isFavorite || track.isFavorite,
+                            isInstaTrend = existing.track.isInstaTrend || track.isInstaTrend
+                        )
+                    }
+                    accepted[existingIndex] = existing.copy(
+                        track = mergedTrack,
+                        normArtist = existing.normArtist.ifBlank { candidateFp.normArtist }
+                    )
                 }
             }
 
-            return uniqueByKey.values
+            return accepted
+                .map { it.track }
                 .sortedWith(
                     compareByDescending<MusicTrack> { it.isInstaTrend }
                         .thenByDescending { it.trendScore }
                 )
                 .take(50)
+        }
+
+        private fun chooseBetterMetadata(current: MusicTrack, candidate: MusicTrack): MusicTrack {
+            val currentGenericArtist = current.artist in GENERIC_ARTISTS
+            val candidateGenericArtist = candidate.artist in GENERIC_ARTISTS
+            return when {
+                currentGenericArtist && !candidateGenericArtist -> candidate.copy(
+                    artworkUri = candidate.artworkUri.ifBlank { current.artworkUri }
+                )
+                current.artworkUri.isBlank() && candidate.artworkUri.isNotBlank() -> current.copy(
+                    artworkUri = candidate.artworkUri
+                )
+                else -> current
+            }
         }
     }
 }

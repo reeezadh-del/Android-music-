@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "UsernameClaim": {
+      "title": "UsernameClaim",
+      "description": "Global uniqueness registry mapping a lowercase 1-to-4 character username key to its owning user ID.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the username owner."
+        },
+        "username": {
+          "type": "string",
+          "description": "Display username chosen by the user (1 to 4 characters)."
+        },
+        "usernameKey": {
+          "type": "string",
+          "description": "Lowercase canonical username key matching the document ID."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "username", "usernameKey", "createdAt"]
+    },
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Per-user account record linking the unique 1-to-4 character username and Google Drive database file ID.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID matching the document ID."
+        },
+        "username": {
+          "type": "string",
+          "description": "Unique 1-to-4 character username."
+        },
+        "usernameKey": {
+          "type": "string",
+          "description": "Lowercase canonical username key."
+        },
+        "driveFileId": {
+          "type": "string",
+          "description": "Optional Google Drive file ID of the user's SQLite database."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "username", "usernameKey", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/usernames/{usernameKey}": {
+      "schema": { "$ref": "#/entities/UsernameClaim" },
+      "description": "Enforces global uniqueness of usernames (max 4 characters)."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccount" },
+      "description": "Stores each user's registered username and Drive database reference."
+    }
+  }
+}

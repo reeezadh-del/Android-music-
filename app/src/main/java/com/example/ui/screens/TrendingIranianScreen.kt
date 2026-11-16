@@ -168,12 +168,6 @@ fun TrendingIranianScreen(
                     }
                 }
             }
-
-            Text(
-                text = stringResource(R.string.trending_sources_caption),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
 
         // Live Search Input

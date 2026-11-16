@@ -118,4 +118,34 @@ class MusicPreferences(private val context: Context) {
             prefs[Keys.LAST_TRACK_ID] = trackId
         }
     }
+
+    suspend fun restoreFromDriveSnapshot(
+        favoriteIds: Set<String>,
+        favoriteOnlineTracks: List<MusicTrack>,
+        shuffleEnabled: Boolean,
+        repeatMode: RepeatModeOption,
+        lastTrackId: String?
+    ) {
+        context.musicDataStore.edit { prefs ->
+            prefs[Keys.FAVORITE_IDS] = favoriteIds
+            prefs[Keys.FAVORITE_ONLINE_TRACKS] = json.encodeToString(favoriteOnlineTracks)
+            prefs[Keys.SHUFFLE_ENABLED] = shuffleEnabled
+            prefs[Keys.REPEAT_MODE] = repeatMode.name
+            if (lastTrackId != null) {
+                prefs[Keys.LAST_TRACK_ID] = lastTrackId
+            } else {
+                prefs.remove(Keys.LAST_TRACK_ID)
+            }
+        }
+    }
+
+    suspend fun clearUserSessionData() {
+        context.musicDataStore.edit { prefs ->
+            prefs.remove(Keys.FAVORITE_IDS)
+            prefs.remove(Keys.FAVORITE_ONLINE_TRACKS)
+            prefs.remove(Keys.SHUFFLE_ENABLED)
+            prefs.remove(Keys.REPEAT_MODE)
+            prefs.remove(Keys.LAST_TRACK_ID)
+        }
+    }
 }

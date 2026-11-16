@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUsernameKey(key) {
+      return key is string && key.size() >= 1 && key.size() <= 4 && key.matches('^[a-z0-9_]+$');
+    }
+
+    function isValidUsernameDisplay(name) {
+      return name is string && name.size() >= 1 && name.size() <= 4 && name.matches('^[a-zA-Z0-9_]+$');
+    }
+
+    function isValidUsernameClaim(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             isValidUsernameDisplay(data.username) &&
+             isValidUsernameKey(data.usernameKey) &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time;
+    }
+
+    function isValidUserAccount(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             isValidUsernameDisplay(data.username) &&
+             isValidUsernameKey(data.usernameKey) &&
+             (!('driveFileId' in data) || data.driveFileId == null || (data.driveFileId is string && data.driveFileId.size() <= 256)) &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    match /usernames/{usernameKey} {
+      allow get: if isSignedIn() && isValidUsernameKey(usernameKey);
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidUsernameKey(usernameKey) &&
+                       isValidUsernameClaim(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().usernameKey == usernameKey &&
+                       incoming().keys().hasAll(['userId', 'username', 'usernameKey', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'username', 'usernameKey', 'createdAt']) &&
+                       !exists(/databases/$(database)/documents/usernames/$(usernameKey));
+
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidUsernameKey(usernameKey) && existing().userId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserAccount(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'username', 'usernameKey', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'username', 'usernameKey', 'driveFileId', 'createdAt', 'updatedAt']) &&
+                       existsAfter(/databases/$(database)/documents/usernames/$(incoming().usernameKey));
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserAccount(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().username == existing().username &&
+                       incoming().usernameKey == existing().usernameKey &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['driveFileId', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+  }
+}

@@ -1,6 +1,9 @@
 package com.example
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -8,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -35,7 +39,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AlternateEmail
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
@@ -60,8 +67,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,16 +83,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.auth.DriveAuthOutcome
+import com.example.auth.GoogleSessionHelper
+import com.example.auth.UserAccount
+import com.example.auth.UserAccountRepository
+import com.example.auth.authStateFlow
+import com.example.drive.DriveDbSnapshot
 import com.example.player.AppTab
+import com.example.player.RepeatModeOption
 import com.example.player.TrackFilter
+import com.example.ui.components.AccountDriveDialog
 import com.example.ui.components.FullNowPlayingSheet
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.components.TrackRowItem
+import com.example.ui.screens.AuthGateScreen
 import com.example.ui.screens.TrendingIranianScreen
 import com.example.ui.theme.AvaPlayerTheme
 import com.example.ui.viewmodel.MusicPlayerViewModel
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,7 +119,487 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AvaPlayerTheme(darkTheme = true) {
-                SimpleMusicPlayerScreen()
+                AvaAuthRoot()
+            }
+        }
+    }
+}
+
+private sealed interface AccountLoadState {
+    data object Loading : AccountLoadState
+    data object NeedsUsername : AccountLoadState
+    data class Ready(val account: UserAccount) : AccountLoadState
+    data class Error(val message: String) : AccountLoadState
+}
+
+private sealed interface PendingDriveAction {
+    data class RegisterUsername(val username: String) : PendingDriveAction
+    data object SaveDrive : PendingDriveAction
+    data object RestoreDrive : PendingDriveAction
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+@Composable
+fun AvaAuthRoot() {
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    val app = remember(context) { context.applicationContext as AvaMusicApplication }
+    val scope = rememberCoroutineScope()
+
+    val auth = remember { Firebase.auth }
+    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+
+    val userAccountRepository = remember { UserAccountRepository(app) }
+
+    var isAuthBusy by remember { mutableStateOf(false) }
+    var authStatusLabel by remember { mutableStateOf<String?>(null) }
+    var authError by remember { mutableStateOf<String?>(null) }
+
+    var usernameInput by rememberSaveable { mutableStateOf("") }
+    var usernameFormatError by remember { mutableStateOf<String?>(null) }
+    var isCheckingAvailability by remember { mutableStateOf(false) }
+    var isUsernameAvailable by remember { mutableStateOf<Boolean?>(null) }
+
+    var driveAccessToken by remember { mutableStateOf<String?>(null) }
+    var pendingDriveAction by remember { mutableStateOf<PendingDriveAction?>(null) }
+    var hasAttemptedSilentLogin by remember { mutableStateOf(false) }
+    var promptedDriveResolutionForUid by remember { mutableStateOf<String?>(null) }
+
+    suspend fun completeRegistrationWithDrive(
+        uid: String,
+        email: String,
+        rawUsername: String,
+        token: String?
+    ) {
+        isAuthBusy = true
+        authError = null
+        authStatusLabel = "در حال ثبت نام کاربری یکتا…"
+
+        val regResult = userAccountRepository.registerUsername(
+            userId = uid,
+            rawUsername = rawUsername
+        )
+        regResult.onSuccess { account ->
+            if (!token.isNullOrBlank()) {
+                authStatusLabel = "در حال ساخت دیتابیس در گوگل درایو…"
+                val existingSync = app.driveDbManager.syncFromGoogleDrive(token, null).getOrNull()
+                if (existingSync != null) {
+                    val (existingFileId, existingSnap) = existingSync
+                    app.preferences.restoreFromDriveSnapshot(
+                        favoriteIds = existingSnap.favoriteIds,
+                        favoriteOnlineTracks = existingSnap.favoriteOnlineTracks,
+                        shuffleEnabled = existingSnap.shuffleEnabled,
+                        repeatMode = existingSnap.repeatMode,
+                        lastTrackId = existingSnap.lastTrackId
+                    )
+                    userAccountRepository.updateDriveFileId(uid, existingFileId)
+                } else {
+                    val storedPrefs = app.preferences.prefsFlow.first()
+                    val initialSnapshot = DriveDbSnapshot(
+                        uid = uid,
+                        username = account.username,
+                        email = email,
+                        favoriteIds = storedPrefs.favoriteIds,
+                        favoriteOnlineTracks = storedPrefs.favoriteOnlineTracks,
+                        shuffleEnabled = storedPrefs.shuffleEnabled,
+                        repeatMode = RepeatModeOption.OFF,
+                        lastTrackId = storedPrefs.lastTrackId,
+                        updatedAtEpochMs = System.currentTimeMillis()
+                    )
+                    val uploadResult = app.driveDbManager.uploadToGoogleDrive(token, initialSnapshot)
+                    uploadResult.onSuccess { fileId ->
+                        userAccountRepository.updateDriveFileId(uid, fileId)
+                    }.onFailure { err ->
+                        authError = "نام کاربری ثبت شد، اما ساخت دیتابیس در گوگل درایو خطا داد: ${err.localizedMessage ?: ""}"
+                    }
+                }
+            }
+        }.onFailure { err ->
+            authError = err.localizedMessage ?: "ثبت نام کاربری ناموفق بود."
+        }
+        isAuthBusy = false
+        authStatusLabel = null
+    }
+
+    val driveResolutionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { activityResult ->
+        val act = activity ?: return@rememberLauncherForActivityResult
+        if (activityResult.resultCode == Activity.RESULT_OK) {
+            val token = GoogleSessionHelper.extractDriveTokenFromIntent(act, activityResult.data)
+            if (!token.isNullOrBlank()) {
+                driveAccessToken = token
+                authError = null
+                val pending = pendingDriveAction
+                pendingDriveAction = null
+                val signedUser = auth.currentUser
+                if (pending is PendingDriveAction.RegisterUsername && signedUser != null) {
+                    scope.launch {
+                        completeRegistrationWithDrive(
+                            uid = signedUser.uid,
+                            email = signedUser.email.orEmpty(),
+                            rawUsername = pending.username,
+                            token = token
+                        )
+                    }
+                }
+            } else {
+                pendingDriveAction = null
+                authError = "توکن دسترسی گوگل درایو دریافت نشد."
+            }
+        } else {
+            val pending = pendingDriveAction
+            pendingDriveAction = null
+            if (pending is PendingDriveAction.RegisterUsername && auth.currentUser != null) {
+                authError = "برای ذخیره دیتابیس داخل گوگل درایو، تأیید دسترسی درایو لازم است."
+            }
+        }
+    }
+
+    fun requestDriveAuthorization(
+        actionAfterAuth: PendingDriveAction? = null,
+        launchPromptIfNeeded: Boolean = true
+    ) {
+        val act = activity ?: return
+        scope.launch {
+            when (val outcome = GoogleSessionHelper.authorizeDrive(act)) {
+                is DriveAuthOutcome.Authorized -> {
+                    driveAccessToken = outcome.accessToken
+                    if (actionAfterAuth is PendingDriveAction.RegisterUsername) {
+                        val signedUser = auth.currentUser
+                        if (signedUser != null) {
+                            completeRegistrationWithDrive(
+                                uid = signedUser.uid,
+                                email = signedUser.email.orEmpty(),
+                                rawUsername = actionAfterAuth.username,
+                                token = outcome.accessToken
+                            )
+                        }
+                    } else {
+                        pendingDriveAction = actionAfterAuth
+                    }
+                }
+                is DriveAuthOutcome.NeedsResolution -> {
+                    if (launchPromptIfNeeded) {
+                        pendingDriveAction = actionAfterAuth
+                        driveResolutionLauncher.launch(
+                            IntentSenderRequest.Builder(outcome.pendingIntent.intentSender).build()
+                        )
+                    }
+                }
+                is DriveAuthOutcome.Failed -> {
+                    authError = outcome.message
+                }
+            }
+        }
+    }
+
+    // Automatic silent Google Sign-In attempt once on cold start
+    LaunchedEffect(Unit) {
+        if (!hasAttemptedSilentLogin && auth.currentUser == null && activity != null) {
+            hasAttemptedSilentLogin = true
+            isAuthBusy = true
+            authStatusLabel = "در حال بررسی حساب گوگل…"
+            GoogleSessionHelper.attemptSilentSignIn(activity)
+            isAuthBusy = false
+            authStatusLabel = null
+        }
+    }
+
+    val user = currentUser
+    if (user == null) {
+        LaunchedEffect(Unit) {
+            driveAccessToken = null
+            pendingDriveAction = null
+            promptedDriveResolutionForUid = null
+            usernameInput = ""
+            usernameFormatError = null
+            isUsernameAvailable = null
+        }
+        AuthGateScreen(
+            isSignedInWithGoogle = false,
+            userEmail = null,
+            isBusy = isAuthBusy,
+            statusLabel = authStatusLabel,
+            errorMessage = authError,
+            usernameInput = usernameInput,
+            usernameError = usernameFormatError,
+            isCheckingAvailability = isCheckingAvailability,
+            isUsernameAvailable = isUsernameAvailable,
+            isDriveAuthorized = false,
+            onGoogleSignInClick = {
+                val act = activity ?: return@AuthGateScreen
+                scope.launch {
+                    isAuthBusy = true
+                    authError = null
+                    authStatusLabel = "در حال اتصال به حساب گوگل…"
+                    val signInResult = GoogleSessionHelper.signInInteractiveWithGoogle(act)
+                    signInResult.onFailure { err ->
+                        authError = err.localizedMessage ?: "ورود با گوگل انجام نشد."
+                    }
+                    isAuthBusy = false
+                    authStatusLabel = null
+                }
+            },
+            onUsernameChange = {},
+            onAuthorizeDriveClick = {},
+            onRegisterUsernameSubmit = {},
+            onSwitchGoogleAccount = {}
+        )
+    } else {
+        // Observe user's Firestore account document (/users/{uid})
+        val accountStateFlow = remember(user.uid) {
+            userAccountRepository.observeUserAccount(user.uid)
+                .map<UserAccount?, AccountLoadState> { account ->
+                    if (account == null) AccountLoadState.NeedsUsername
+                    else AccountLoadState.Ready(account)
+                }
+                .catch { err ->
+                    emit(AccountLoadState.Error(err.localizedMessage ?: "خطا در خواندن حساب کاربری"))
+                }
+        }
+        val accountState by accountStateFlow.collectAsStateWithLifecycle(initialValue = AccountLoadState.Loading)
+
+        // Automatically request Drive token once per authenticated session
+        LaunchedEffect(user.uid) {
+            if (driveAccessToken == null && promptedDriveResolutionForUid != user.uid && activity != null) {
+                promptedDriveResolutionForUid = user.uid
+                requestDriveAuthorization(actionAfterAuth = null, launchPromptIfNeeded = true)
+            }
+        }
+
+        // Debounced uniqueness & format validation while typing the 1..4 char username
+        LaunchedEffect(usernameInput, accountState) {
+            if (accountState !is AccountLoadState.NeedsUsername) return@LaunchedEffect
+            val trimmed = usernameInput.trim()
+            if (trimmed.isEmpty()) {
+                usernameFormatError = null
+                isUsernameAvailable = null
+                isCheckingAvailability = false
+                return@LaunchedEffect
+            }
+            val formatErr = UserAccountRepository.validateUsername(trimmed)
+            if (formatErr != null) {
+                usernameFormatError = formatErr
+                isUsernameAvailable = null
+                isCheckingAvailability = false
+                return@LaunchedEffect
+            }
+            usernameFormatError = null
+            isCheckingAvailability = true
+            delay(300L)
+            val availRes = userAccountRepository.isUsernameAvailable(trimmed)
+            isUsernameAvailable = availRes.getOrNull()
+            availRes.onFailure {
+                usernameFormatError = it.localizedMessage
+            }
+            isCheckingAvailability = false
+        }
+
+        when (val state = accountState) {
+            is AccountLoadState.Loading -> {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    contentWindowInsets = WindowInsets.safeDrawing
+                ) { padding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            CircularProgressIndicator()
+                            Text(
+                                text = stringResource(R.string.auth_checking_account),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            is AccountLoadState.NeedsUsername -> {
+                AuthGateScreen(
+                    isSignedInWithGoogle = true,
+                    userEmail = user.email,
+                    isBusy = isAuthBusy,
+                    statusLabel = authStatusLabel,
+                    errorMessage = authError,
+                    usernameInput = usernameInput,
+                    usernameError = usernameFormatError,
+                    isCheckingAvailability = isCheckingAvailability,
+                    isUsernameAvailable = isUsernameAvailable,
+                    isDriveAuthorized = !driveAccessToken.isNullOrBlank(),
+                    onGoogleSignInClick = {},
+                    onUsernameChange = { raw ->
+                        authError = null
+                        usernameInput = raw
+                    },
+                    onAuthorizeDriveClick = {
+                        requestDriveAuthorization(actionAfterAuth = null, launchPromptIfNeeded = true)
+                    },
+                    onRegisterUsernameSubmit = {
+                        val trimmed = usernameInput.trim()
+                        val err = UserAccountRepository.validateUsername(trimmed)
+                        if (err != null) {
+                            usernameFormatError = err
+                            return@AuthGateScreen
+                        }
+                        val token = driveAccessToken
+                        if (token.isNullOrBlank()) {
+                            requestDriveAuthorization(
+                                actionAfterAuth = PendingDriveAction.RegisterUsername(trimmed),
+                                launchPromptIfNeeded = true
+                            )
+                        } else {
+                            scope.launch {
+                                completeRegistrationWithDrive(
+                                    uid = user.uid,
+                                    email = user.email.orEmpty(),
+                                    rawUsername = trimmed,
+                                    token = token
+                                )
+                            }
+                        }
+                    },
+                    onSwitchGoogleAccount = {
+                        scope.launch {
+                            isAuthBusy = true
+                            driveAccessToken = null
+                            app.preferences.clearUserSessionData()
+                            app.driveDbManager.deleteLocalDatabaseFile()
+                            GoogleSessionHelper.signOutCompletely(app)
+                            isAuthBusy = false
+                        }
+                    }
+                )
+            }
+
+            is AccountLoadState.Error -> {
+                AuthGateScreen(
+                    isSignedInWithGoogle = true,
+                    userEmail = user.email,
+                    isBusy = isAuthBusy,
+                    statusLabel = authStatusLabel,
+                    errorMessage = state.message,
+                    usernameInput = usernameInput,
+                    usernameError = usernameFormatError,
+                    isCheckingAvailability = false,
+                    isUsernameAvailable = null,
+                    isDriveAuthorized = !driveAccessToken.isNullOrBlank(),
+                    onGoogleSignInClick = {},
+                    onUsernameChange = { usernameInput = it },
+                    onAuthorizeDriveClick = {
+                        requestDriveAuthorization(actionAfterAuth = null, launchPromptIfNeeded = true)
+                    },
+                    onRegisterUsernameSubmit = {},
+                    onSwitchGoogleAccount = {
+                        scope.launch {
+                            driveAccessToken = null
+                            GoogleSessionHelper.signOutCompletely(app)
+                        }
+                    }
+                )
+            }
+
+            is AccountLoadState.Ready -> {
+                key(user.uid) {
+                    val playerViewModel: MusicPlayerViewModel = viewModel(
+                        key = user.uid,
+                        factory = viewModelFactory {
+                            initializer {
+                                val application = checkNotNull(this[APPLICATION_KEY]) as AvaMusicApplication
+                                MusicPlayerViewModel(
+                                    appContext = application,
+                                    preferences = application.preferences,
+                                    repository = application.repository,
+                                    trendingRepository = application.trendingRepository,
+                                    userAccountRepository = UserAccountRepository(application),
+                                    driveDbManager = application.driveDbManager,
+                                    currentUserId = user.uid
+                                )
+                            }
+                        }
+                    )
+
+                    val userEmail = user.email.orEmpty()
+                    LaunchedEffect(driveAccessToken, state.account) {
+                        playerViewModel.updateDriveSessionContext(
+                            accessToken = driveAccessToken,
+                            account = state.account,
+                            email = userEmail
+                        )
+                        val pending = pendingDriveAction
+                        val token = driveAccessToken
+                        if (!token.isNullOrBlank() && pending != null) {
+                            when (pending) {
+                                PendingDriveAction.SaveDrive -> {
+                                    pendingDriveAction = null
+                                    playerViewModel.syncCurrentDatabaseToDrive(token, state.account, userEmail)
+                                }
+                                PendingDriveAction.RestoreDrive -> {
+                                    pendingDriveAction = null
+                                    playerViewModel.restoreFromGoogleDrive(token, state.account, userEmail)
+                                }
+                                is PendingDriveAction.RegisterUsername -> {
+                                    pendingDriveAction = null
+                                }
+                            }
+                        }
+                    }
+
+                    SimpleMusicPlayerScreen(
+                        viewModel = playerViewModel,
+                        userAccount = state.account,
+                        userEmail = userEmail,
+                        isDriveAuthorized = !driveAccessToken.isNullOrBlank(),
+                        onRequestDriveAuth = {
+                            requestDriveAuthorization(actionAfterAuth = null, launchPromptIfNeeded = true)
+                        },
+                        onSaveToDrive = {
+                            val token = driveAccessToken
+                            if (token.isNullOrBlank()) {
+                                requestDriveAuthorization(
+                                    actionAfterAuth = PendingDriveAction.SaveDrive,
+                                    launchPromptIfNeeded = true
+                                )
+                            } else {
+                                playerViewModel.syncCurrentDatabaseToDrive(token, state.account, userEmail)
+                            }
+                        },
+                        onRestoreFromDrive = {
+                            val token = driveAccessToken
+                            if (token.isNullOrBlank()) {
+                                requestDriveAuthorization(
+                                    actionAfterAuth = PendingDriveAction.RestoreDrive,
+                                    launchPromptIfNeeded = true
+                                )
+                            } else {
+                                playerViewModel.restoreFromGoogleDrive(token, state.account, userEmail)
+                            }
+                        },
+                        onSignOut = {
+                            scope.launch {
+                                driveAccessToken = null
+                                pendingDriveAction = null
+                                app.preferences.clearUserSessionData()
+                                app.driveDbManager.deleteLocalDatabaseFile()
+                                GoogleSessionHelper.signOutCompletely(app)
+                            }
+                        }
+                    )
+                }
             }
         }
     }
@@ -99,7 +607,14 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun SimpleMusicPlayerScreen(
-    viewModel: MusicPlayerViewModel = viewModel()
+    viewModel: MusicPlayerViewModel,
+    userAccount: UserAccount,
+    userEmail: String,
+    isDriveAuthorized: Boolean,
+    onRequestDriveAuth: () -> Unit,
+    onSaveToDrive: () -> Unit,
+    onRestoreFromDrive: () -> Unit,
+    onSignOut: () -> Unit
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -120,7 +635,12 @@ fun SimpleMusicPlayerScreen(
     val isLoadingTrending by viewModel.isLoadingTrending.collectAsStateWithLifecycle()
     val trendingError by viewModel.trendingError.collectAsStateWithLifecycle()
 
+    val isSyncingDrive by viewModel.isSyncingDrive.collectAsStateWithLifecycle()
+    val driveSyncMessage by viewModel.driveSyncMessage.collectAsStateWithLifecycle()
+    val favoriteCount by viewModel.favoriteCount.collectAsStateWithLifecycle()
+
     var isNowPlayingOpen by rememberSaveable { mutableStateOf(false) }
+    var isAccountDialogOpen by rememberSaveable { mutableStateOf(false) }
 
     val audioPermission = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -262,7 +782,7 @@ fun SimpleMusicPlayerScreen(
                                     .padding(horizontal = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                // Header
+                                // Header with unique @username + Drive status pill
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -301,7 +821,58 @@ fun SimpleMusicPlayerScreen(
                                         }
                                     }
 
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Surface(
+                                            onClick = { isAccountDialogOpen = true },
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier
+                                                .height(40.dp)
+                                                .testTag("account_profile_button")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.AlternateEmail,
+                                                    contentDescription = "حساب کاربری",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Text(
+                                                    text = userAccount.username,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                if (isSyncingDrive) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(14.dp),
+                                                        strokeWidth = 2.dp
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        imageVector = if (isDriveAuthorized) {
+                                                            Icons.Rounded.CloudDone
+                                                        } else {
+                                                            Icons.Rounded.CloudOff
+                                                        },
+                                                        contentDescription = null,
+                                                        tint = if (isDriveAuthorized) {
+                                                            MaterialTheme.colorScheme.tertiary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        },
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
                                         IconButton(
                                             onClick = triggerScan,
                                             modifier = Modifier
@@ -509,6 +1080,26 @@ fun SimpleMusicPlayerScreen(
                     }
                 }
             }
+        }
+
+        if (isAccountDialogOpen) {
+            AccountDriveDialog(
+                username = userAccount.username,
+                userEmail = userEmail,
+                driveFileId = userAccount.driveFileId,
+                isDriveAuthorized = isDriveAuthorized,
+                isSyncingDrive = isSyncingDrive,
+                driveSyncMessage = driveSyncMessage,
+                favoriteCount = favoriteCount,
+                onDismiss = { isAccountDialogOpen = false },
+                onAuthorizeDrive = onRequestDriveAuth,
+                onSaveToDrive = onSaveToDrive,
+                onRestoreFromDrive = onRestoreFromDrive,
+                onSignOut = {
+                    isAccountDialogOpen = false
+                    onSignOut()
+                }
+            )
         }
 
         AnimatedVisibility(

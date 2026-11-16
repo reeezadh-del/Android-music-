@@ -1,21 +1,27 @@
 package com.example.ui.viewmodel
 
-import android.app.Application
 import android.content.ComponentName
+import android.content.Context
 import android.net.Uri
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.example.AvaMusicApplication
+import com.example.auth.UserAccount
+import com.example.auth.UserAccountRepository
+import com.example.drive.DriveDbSnapshot
+import com.example.drive.GoogleDriveDatabaseManager
 import com.example.player.AppTab
+import com.example.player.MusicLibraryRepository
 import com.example.player.MusicPlaybackService
+import com.example.player.MusicPreferences
 import com.example.player.MusicTrack
 import com.example.player.RepeatModeOption
 import com.example.player.TrackFilter
 import com.example.player.TrendingCategory
 import com.example.player.TrendingPreset
+import com.example.player.TrendingIranianRepository
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Job
@@ -26,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -38,17 +45,26 @@ data class PlayerUiState(
     val repeatMode: RepeatModeOption = RepeatModeOption.OFF
 )
 
-class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val app = application as AvaMusicApplication
-    private val preferences = app.preferences
-    private val repository = app.repository
-    private val trendingRepository = app.trendingRepository
+class MusicPlayerViewModel(
+    private val appContext: Context,
+    private val preferences: MusicPreferences,
+    private val repository: MusicLibraryRepository,
+    private val trendingRepository: TrendingIranianRepository,
+    private val userAccountRepository: UserAccountRepository,
+    private val driveDbManager: GoogleDriveDatabaseManager,
+    val currentUserId: String
+) : ViewModel() {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
     private var progressJob: Job? = null
     private var trendingLoadJob: Job? = null
+    private var autoDriveSyncJob: Job? = null
+
+    private var activeDriveToken: String? = null
+    private var activeAccount: UserAccount? = null
+    private var activeEmail: String = ""
+    private var hasCompletedInitialDriveRestore = false
 
     private val _activeTab = MutableStateFlow(AppTab.LIBRARY)
     val activeTab: StateFlow<AppTab> = _activeTab.asStateFlow()
@@ -57,6 +73,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val allTracks: StateFlow<List<MusicTrack>> = _allTracks.asStateFlow()
 
     private val _favoriteOnlineTracks = MutableStateFlow<List<MusicTrack>>(emptyList())
+    private val _favoriteCount = MutableStateFlow(0)
+    val favoriteCount: StateFlow<Int> = _favoriteCount.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -85,6 +103,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _trendingError = MutableStateFlow<String?>(null)
     val trendingError: StateFlow<String?> = _trendingError.asStateFlow()
+
+    private val _isSyncingDrive = MutableStateFlow(false)
+    val isSyncingDrive: StateFlow<Boolean> = _isSyncingDrive.asStateFlow()
+
+    private val _driveSyncMessage = MutableStateFlow<String?>(null)
+    val driveSyncMessage: StateFlow<String?> = _driveSyncMessage.asStateFlow()
 
     private var hasLoadedInitialTrending = false
     private var activeQueueTracks: List<MusicTrack> = emptyList()
@@ -120,9 +144,169 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             preferences.prefsFlow.collect { prefs ->
                 _favoriteOnlineTracks.value = prefs.favoriteOnlineTracks
+                _favoriteCount.value = prefs.favoriteIds.size
                 refreshLibrary(prefs.favoriteIds, prefs.importedUris)
                 syncTrendingFavoriteFlags(prefs.favoriteIds)
             }
+        }
+    }
+
+    fun updateDriveSessionContext(
+        accessToken: String?,
+        account: UserAccount,
+        email: String
+    ) {
+        activeAccount = account
+        activeEmail = email
+        if (!accessToken.isNullOrBlank()) {
+            val shouldRestore = !hasCompletedInitialDriveRestore && activeDriveToken != accessToken
+            activeDriveToken = accessToken
+            if (shouldRestore) {
+                restoreFromGoogleDrive(
+                    accessToken = accessToken,
+                    account = account,
+                    email = email,
+                    showToast = true
+                )
+            }
+        }
+    }
+
+    fun restoreFromGoogleDrive(
+        accessToken: String,
+        account: UserAccount,
+        email: String,
+        showToast: Boolean = true
+    ) {
+        if (_isSyncingDrive.value) return
+        activeDriveToken = accessToken
+        activeAccount = account
+        activeEmail = email
+
+        viewModelScope.launch {
+            _isSyncingDrive.value = true
+            val result = driveDbManager.syncFromGoogleDrive(
+                accessToken = accessToken,
+                knownFileId = account.driveFileId
+            )
+            result.onSuccess { pair ->
+                if (pair != null) {
+                    val (fileId, snapshot) = pair
+                    preferences.restoreFromDriveSnapshot(
+                        favoriteIds = snapshot.favoriteIds,
+                        favoriteOnlineTracks = snapshot.favoriteOnlineTracks,
+                        shuffleEnabled = snapshot.shuffleEnabled,
+                        repeatMode = snapshot.repeatMode,
+                        lastTrackId = snapshot.lastTrackId
+                    )
+                    applyControllerModes(snapshot.shuffleEnabled, snapshot.repeatMode)
+                    if (account.driveFileId != fileId) {
+                        userAccountRepository.updateDriveFileId(currentUserId, fileId)
+                    }
+                    hasCompletedInitialDriveRestore = true
+                    val msg = "دیتابیس @${account.username} از گوگل درایو بازخوانی شد (${snapshot.favoriteIds.size} علاقه‌مندی)"
+                    _driveSyncMessage.value = msg
+                    if (showToast) _statusMessage.value = msg
+                } else {
+                    // No SQLite file on Drive yet: create initial database file on Drive
+                    val initialUpload = uploadSnapshotInternal(accessToken, account, email)
+                    hasCompletedInitialDriveRestore = true
+                    initialUpload.onSuccess {
+                        val msg = "دیتابیس اولیه در گوگل درایو ایجاد شد"
+                        _driveSyncMessage.value = msg
+                        if (showToast) _statusMessage.value = msg
+                    }.onFailure { err ->
+                        _driveSyncMessage.value = err.localizedMessage ?: "خطا در ایجاد دیتابیس گوگل درایو"
+                    }
+                }
+            }.onFailure { err ->
+                _driveSyncMessage.value = err.localizedMessage ?: "بازخوانی از گوگل درایو ناموفق بود"
+                if (showToast) {
+                    _statusMessage.value = "خطا در بازخوانی از گوگل درایو"
+                }
+            }
+            _isSyncingDrive.value = false
+        }
+    }
+
+    fun syncCurrentDatabaseToDrive(
+        accessToken: String,
+        account: UserAccount,
+        email: String,
+        showToast: Boolean = true
+    ) {
+        if (_isSyncingDrive.value) return
+        activeDriveToken = accessToken
+        activeAccount = account
+        activeEmail = email
+
+        viewModelScope.launch {
+            _isSyncingDrive.value = true
+            val uploadResult = uploadSnapshotInternal(accessToken, account, email)
+            uploadResult.onSuccess {
+                hasCompletedInitialDriveRestore = true
+                val msg = "دیتابیس SQLite با موفقیت در گوگل درایو ذخیره شد"
+                _driveSyncMessage.value = msg
+                if (showToast) _statusMessage.value = msg
+            }.onFailure { err ->
+                _driveSyncMessage.value = err.localizedMessage ?: "ذخیره در گوگل درایو ناموفق بود"
+                if (showToast) _statusMessage.value = "خطا در ذخیره دیتابیس در گوگل درایو"
+            }
+            _isSyncingDrive.value = false
+        }
+    }
+
+    private suspend fun uploadSnapshotInternal(
+        accessToken: String,
+        account: UserAccount,
+        email: String
+    ): Result<String> {
+        val prefs = preferences.prefsFlow.first()
+        val snapshot = DriveDbSnapshot(
+            uid = currentUserId,
+            username = account.username,
+            email = email,
+            favoriteIds = prefs.favoriteIds,
+            favoriteOnlineTracks = prefs.favoriteOnlineTracks,
+            shuffleEnabled = prefs.shuffleEnabled,
+            repeatMode = prefs.repeatMode,
+            lastTrackId = prefs.lastTrackId,
+            updatedAtEpochMs = System.currentTimeMillis()
+        )
+        val result = driveDbManager.uploadToGoogleDrive(
+            accessToken = accessToken,
+            snapshot = snapshot,
+            knownFileId = account.driveFileId
+        )
+        result.onSuccess { fileId ->
+            if (account.driveFileId != fileId) {
+                userAccountRepository.updateDriveFileId(currentUserId, fileId)
+            }
+        }
+        return result
+    }
+
+    private fun scheduleAutoDriveSync() {
+        val token = activeDriveToken ?: return
+        val account = activeAccount ?: return
+        if (!hasCompletedInitialDriveRestore) return
+
+        autoDriveSyncJob?.cancel()
+        autoDriveSyncJob = viewModelScope.launch {
+            delay(1_200L)
+            uploadSnapshotInternal(token, account, activeEmail).onSuccess {
+                _driveSyncMessage.value = "آخرین تغییرات در گوگل درایو ذخیره شد"
+            }
+        }
+    }
+
+    private fun applyControllerModes(shuffleEnabled: Boolean, repeatMode: RepeatModeOption) {
+        val controller = mediaController ?: return
+        controller.shuffleModeEnabled = shuffleEnabled
+        controller.repeatMode = when (repeatMode) {
+            RepeatModeOption.OFF -> Player.REPEAT_MODE_OFF
+            RepeatModeOption.ALL -> Player.REPEAT_MODE_ALL
+            RepeatModeOption.ONE -> Player.REPEAT_MODE_ONE
         }
     }
 
@@ -136,8 +320,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun connectToService() {
-        val token = SessionToken(app, ComponentName(app, MusicPlaybackService::class.java))
-        val future = MediaController.Builder(app, token).buildAsync()
+        val token = SessionToken(appContext, ComponentName(appContext, MusicPlaybackService::class.java))
+        val future = MediaController.Builder(appContext, token).buildAsync()
         controllerFuture = future
         future.addListener(
             {
@@ -145,12 +329,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     mediaController = controller
                     viewModelScope.launch {
                         val stored = preferences.prefsFlow.first()
-                        controller.shuffleModeEnabled = stored.shuffleEnabled
-                        controller.repeatMode = when (stored.repeatMode) {
-                            RepeatModeOption.OFF -> Player.REPEAT_MODE_OFF
-                            RepeatModeOption.ALL -> Player.REPEAT_MODE_ALL
-                            RepeatModeOption.ONE -> Player.REPEAT_MODE_ONE
-                        }
+                        applyControllerModes(stored.shuffleEnabled, stored.repeatMode)
                     }
                     controller.addListener(object : Player.Listener {
                         override fun onEvents(player: Player, events: Player.Events) {
@@ -239,7 +418,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _trendingError.value = null
                 mediaController?.let { syncFromController(it) }
             }.onFailure {
-                _trendingError.value = "دریافت ترندهای اینستاگرام از سایت‌های ایرانی ممکن نشد. اتصال اینترنت را بررسی کنید."
+                _trendingError.value = "دریافت ترندهای اینستاگرام ممکن نشد. اتصال اینترنت را بررسی کنید."
             }
             _isLoadingTrending.value = false
         }
@@ -393,7 +572,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val controller = mediaController ?: return
         val next = !controller.shuffleModeEnabled
         controller.shuffleModeEnabled = next
-        viewModelScope.launch { preferences.setShuffleEnabled(next) }
+        viewModelScope.launch {
+            preferences.setShuffleEnabled(next)
+            scheduleAutoDriveSync()
+        }
     }
 
     fun cycleRepeatMode() {
@@ -408,7 +590,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             RepeatModeOption.ALL -> Player.REPEAT_MODE_ALL
             RepeatModeOption.ONE -> Player.REPEAT_MODE_ONE
         }
-        viewModelScope.launch { preferences.setRepeatMode(nextOption) }
+        viewModelScope.launch {
+            preferences.setRepeatMode(nextOption)
+            scheduleAutoDriveSync()
+        }
     }
 
     fun toggleFavorite(trackId: String) {
@@ -424,6 +609,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val isFav = preferences.toggleFavorite(trackId, snapshot)
             _statusMessage.value = if (isFav) "به علاقه‌مندی‌ها اضافه شد" else "از علاقه‌مندی‌ها حذف شد"
+            scheduleAutoDriveSync()
         }
     }
 
@@ -442,6 +628,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     override fun onCleared() {
         progressJob?.cancel()
         trendingLoadJob?.cancel()
+        autoDriveSyncJob?.cancel()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null
         super.onCleared()

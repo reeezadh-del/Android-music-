@@ -1,6 +1,7 @@
 package com.example
 
 import com.example.player.IranianMusicSite
+import com.example.player.MusicTrack
 import com.example.player.RepeatModeOption
 import com.example.player.TrackFilter
 import com.example.player.TrendingCategory
@@ -27,24 +28,31 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun `persian title parser extracts artist and clean song name`() {
+    fun `persian title parser extracts artist cleanly and never exposes site names`() {
         val parsed = TrendingIranianRepository.parsePersianPostTitle(
-            "دانلود آهنگ جدید ترند اینستاگرام شادمهر عقیلی بنام قلبم با کیفیت 320 و 128",
-            "موزیک وب"
+            "دانلود آهنگ جدید ترند اینستاگرام شادمهر عقیلی بنام قلبم با کیفیت 320 و 128 از موزیک وب",
+            isRemix = false
         )
         assertEquals("شادمهر عقیلی", parsed.artist)
         assertEquals("قلبم", parsed.title)
 
         val dashParsed = TrendingIranianRepository.parsePersianPostTitle(
-            "دانلود ریمیکس جدید مهراد هیدن – کجا میری ترند اینستاگرام",
-            "ریمیکس‌گرام"
+            "دانلود ریمیکس جدید مهراد هیدن – کجا میری ترند اینستاگرام ریمیکس گرام",
+            isRemix = true
         )
         assertEquals("مهراد هیدن", dashParsed.artist)
         assertEquals("کجا میری", dashParsed.title)
+
+        val fallback = TrendingIranianRepository.parsePersianPostTitle(
+            "دانلود آهنگ شبای تهران آپ موزیک",
+            isRemix = false
+        )
+        assertEquals("شبای تهران", fallback.title)
+        assertEquals("هنرمند ایرانی", fallback.artist)
     }
 
     @Test
-    fun `wordpress json and html parsers extract iranian mp3s with instagram trend scoring`() {
+    fun `wordpress json and html parsers hide site label and extract mp3`() {
         val siteA = IranianMusicSite("musicsweb", "موزیک وب", "https://musicsweb.ir")
         val siteB = IranianMusicSite("remixgram", "ریمیکس‌گرام", "https://remixgram.com")
 
@@ -72,7 +80,7 @@ class ExampleUnitTest {
         assertTrue(wpTracks[0].isRemix)
         assertTrue(wpTracks[0].isInstaTrend)
         assertTrue(wpTracks[0].isFavorite)
-        assertEquals("موزیک وب", wpTracks[0].sourceLabel)
+        assertEquals("", wpTracks[0].sourceLabel)
         assertEquals("https://dl.musicsweb.ir/music/shabaye-tehran-remix-320.mp3", wpTracks[0].mediaUri)
 
         val postHtml = """
@@ -97,15 +105,72 @@ class ExampleUnitTest {
         assertNotNull(htmlTrack)
         assertEquals("دیوانه", htmlTrack!!.title)
         assertEquals("رضا بهرام", htmlTrack.artist)
+        assertEquals("", htmlTrack.sourceLabel)
         assertFalse(htmlTrack.isRemix)
         assertTrue(htmlTrack.isInstaTrend)
+    }
 
-        val remixesOnly = TrendingIranianRepository.deduplicateAndRank(
-            wpTracks + htmlTrack,
-            TrendingCategory.REMIXES
+    @Test
+    fun `deduplicateAndRank eliminates duplicate songs across persian character variants`() {
+        val v1 = MusicTrack(
+            id = "ir_musicsweb_1",
+            title = "شبای تهران",
+            artist = "علیرضا طلیسچی",
+            album = "ترند اینستا",
+            durationMs = 0L,
+            mediaUri = "https://dl.musicsweb.ir/shabaye-tehran-320.mp3",
+            artworkUri = "https://musicsweb.ir/cover.jpg",
+            isOnline = true,
+            isInstaTrend = true,
+            trendScore = 30_000L
         )
-        assertEquals(1, remixesOnly.size)
-        assertEquals("ir_musicsweb_101", remixesOnly[0].id)
+        val v2 = MusicTrack(
+            id = "ir_upmusics_2",
+            title = "شباي تهران (ورژن اصلی)",
+            artist = "عليرضا طليسچي",
+            album = "ترند اینستا",
+            durationMs = 0L,
+            mediaUri = "https://dl.upmusics.com/shabaye-tehran-128.mp3",
+            artworkUri = "",
+            isOnline = true,
+            isInstaTrend = true,
+            trendScore = 25_000L
+        )
+        val v3 = MusicTrack(
+            id = "ir_rozmusic_3",
+            title = "شبای تهران علیرضا طلیسچی",
+            artist = "هنرمند ایرانی",
+            album = "ترند اینستا",
+            durationMs = 0L,
+            mediaUri = "https://dl.rozmusic.com/other.mp3",
+            artworkUri = "",
+            isOnline = true,
+            isInstaTrend = true,
+            trendScore = 22_000L
+        )
+        val distinct = MusicTrack(
+            id = "ir_remixgram_4",
+            title = "کجا میری",
+            artist = "مهراد هیدن",
+            album = "ریمیکس ترند اینستا",
+            durationMs = 0L,
+            mediaUri = "https://dl.remixgram.com/koja-miri.mp3",
+            artworkUri = "",
+            isOnline = true,
+            isRemix = true,
+            isInstaTrend = true,
+            trendScore = 28_000L
+        )
+
+        val ranked = TrendingIranianRepository.deduplicateAndRank(
+            listOf(v1, v2, v3, distinct),
+            TrendingCategory.ALL
+        )
+        assertEquals(2, ranked.size)
+        assertEquals("شبای تهران", ranked[0].title)
+        assertEquals("علیرضا طلیسچی", ranked[0].artist)
+        assertTrue(ranked[0].trendScore > 30_000L)
+        assertEquals("کجا میری", ranked[1].title)
     }
 
     @Test
