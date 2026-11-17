@@ -3,6 +3,7 @@ package com.example
 import android.app.Application
 import com.example.diagnostics.CrashReporter
 import com.example.drive.GoogleDriveDatabaseManager
+import com.example.player.AutoSpeedVolumeManager
 import com.example.player.MusicLibraryRepository
 import com.example.player.MusicPreferences
 import com.example.player.TrendingIranianRepository
@@ -22,6 +23,9 @@ class AvaMusicApplication : Application() {
     lateinit var driveDbManager: GoogleDriveDatabaseManager
         private set
 
+    lateinit var autoSpeedVolumeManager: AutoSpeedVolumeManager
+        private set
+
     override fun onCreate() {
         CrashReporter.install(this)
         super.onCreate()
@@ -36,5 +40,6 @@ class AvaMusicApplication : Application() {
         repository = MusicLibraryRepository(this, preferences)
         trendingRepository = TrendingIranianRepository()
         driveDbManager = GoogleDriveDatabaseManager(this)
+        autoSpeedVolumeManager = AutoSpeedVolumeManager(this, preferences)
     }
 }

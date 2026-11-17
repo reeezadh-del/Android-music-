@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -515,7 +517,10 @@ fun FullNowPlayingSheet(
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
     onToggleFavorite: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isAutoSpeedActive: Boolean = false,
+    onOpenAutoSpeedVolume: (() -> Unit)? = null,
+    onOpenDrivingMode: (() -> Unit)? = null
 ) {
     BackHandler(onBack = onCollapse)
 
@@ -565,17 +570,55 @@ fun FullNowPlayingSheet(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            IconButton(
-                onClick = onToggleFavorite,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("now_playing_favorite")
-            ) {
-                Icon(
-                    imageVector = if (track.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    contentDescription = stringResource(R.string.cd_favorite),
-                    tint = if (track.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onOpenDrivingMode != null) {
+                    IconButton(
+                        onClick = onOpenDrivingMode,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("now_playing_driving_mode_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Speed,
+                            contentDescription = stringResource(R.string.driving_mode_title),
+                            tint = if (isAutoSpeedActive) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
+                if (onOpenAutoSpeedVolume != null) {
+                    IconButton(
+                        onClick = onOpenAutoSpeedVolume,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("now_playing_speed_volume_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.DirectionsCar,
+                            contentDescription = stringResource(R.string.auto_speed_volume_title),
+                            tint = if (isAutoSpeedActive) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("now_playing_favorite")
+                ) {
+                    Icon(
+                        imageVector = if (track.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        contentDescription = stringResource(R.string.cd_favorite),
+                        tint = if (track.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 

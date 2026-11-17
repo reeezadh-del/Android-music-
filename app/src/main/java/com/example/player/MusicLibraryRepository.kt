@@ -177,17 +177,6 @@ class MusicLibraryRepository(
     }
 
     fun toMediaItem(track: MusicTrack): MediaItem {
-        val metadataBuilder = MediaMetadata.Builder()
-            .setTitle(track.title)
-            .setArtist(track.artist)
-            .setAlbumTitle(track.album)
-        if (track.artworkUri.isNotBlank()) {
-            metadataBuilder.setArtworkUri(Uri.parse(track.artworkUri))
-        }
-        return MediaItem.Builder()
-            .setMediaId(track.id)
-            .setUri(Uri.parse(track.mediaUri))
-            .setMediaMetadata(metadataBuilder.build())
-            .build()
+        return AutoMediaLibraryTree.toPlayableMediaItem(track)
     }
 }

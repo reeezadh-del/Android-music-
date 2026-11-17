@@ -3,29 +3,38 @@ package com.example.ui.viewmodel
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.example.ai.AiVoiceSearchRepository
+import com.example.ai.AiVoiceSearchResult
 import com.example.auth.UserAccount
 import com.example.auth.UserAccountRepository
 import com.example.diagnostics.CrashReporter
 import com.example.drive.DriveDbSnapshot
 import com.example.drive.GoogleDriveDatabaseManager
 import com.example.player.AppTab
+import com.example.player.AudioVoiceRecorder
+import com.example.player.AutoSpeedVolumeManager
+import com.example.player.AutoSpeedVolumeState
 import com.example.player.MusicLibraryRepository
 import com.example.player.MusicPlaybackService
 import com.example.player.MusicPreferences
 import com.example.player.MusicTrack
 import com.example.player.RepeatModeOption
+import com.example.player.SpeedVolumeSensitivity
 import com.example.player.TrackFilter
 import com.example.player.TrendingCategory
 import com.example.player.TrendingPreset
 import com.example.player.TrendingIranianRepository
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +46,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class PlayerUiState(
     val currentTrack: MusicTrack? = null,
@@ -47,6 +57,15 @@ data class PlayerUiState(
     val repeatMode: RepeatModeOption = RepeatModeOption.OFF
 )
 
+sealed interface AiVoiceSearchUiState {
+    data object Idle : AiVoiceSearchUiState
+    data object PermissionRequired : AiVoiceSearchUiState
+    data class Recording(val elapsedSeconds: Int = 0, val amplitude: Float = 0f) : AiVoiceSearchUiState
+    data object Analyzing : AiVoiceSearchUiState
+    data class Success(val result: AiVoiceSearchResult) : AiVoiceSearchUiState
+    data class Error(val message: String) : AiVoiceSearchUiState
+}
+
 class MusicPlayerViewModel(
     private val appContext: Context,
     private val preferences: MusicPreferences,
@@ -54,7 +73,8 @@ class MusicPlayerViewModel(
     private val trendingRepository: TrendingIranianRepository,
     private val userAccountRepository: UserAccountRepository?,
     private val driveDbManager: GoogleDriveDatabaseManager,
-    val currentUserId: String
+    val currentUserId: String,
+    private val autoSpeedVolumeManager: AutoSpeedVolumeManager? = null
 ) : ViewModel() {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -62,6 +82,11 @@ class MusicPlayerViewModel(
     private var progressJob: Job? = null
     private var trendingLoadJob: Job? = null
     private var autoDriveSyncJob: Job? = null
+    private var voiceRecordingJob: Job? = null
+    private var aiVoiceJob: Job? = null
+
+    private val aiVoiceSearchRepository by lazy { AiVoiceSearchRepository() }
+    private val audioVoiceRecorder by lazy { AudioVoiceRecorder(appContext) }
 
     private var activeDriveToken: String? = null
     private var activeAccount: UserAccount? = null
@@ -120,6 +145,12 @@ class MusicPlayerViewModel(
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
+
+    private val _aiVoiceState = MutableStateFlow<AiVoiceSearchUiState>(AiVoiceSearchUiState.Idle)
+    val aiVoiceState: StateFlow<AiVoiceSearchUiState> = _aiVoiceState.asStateFlow()
+
+    val autoSpeedVolumeState: StateFlow<AutoSpeedVolumeState> =
+        autoSpeedVolumeManager?.state ?: MutableStateFlow(AutoSpeedVolumeState()).asStateFlow()
 
     val filteredTracks: StateFlow<List<MusicTrack>> = combine(
         _allTracks,
@@ -630,8 +661,208 @@ class MusicPlayerViewModel(
         _searchQuery.value = query
     }
 
+    fun applyVoiceSearchToLibrary(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return
+        _activeFilter.value = TrackFilter.ALL
+        _searchQuery.value = trimmed
+        _statusMessage.value = "جستجوی صوتی: «$trimmed»"
+    }
+
+    fun applyVoiceSearchToTrending(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return
+        _trendingSearchQuery.value = trimmed
+        _statusMessage.value = "جستجوی صوتی ترند: «$trimmed»"
+        loadTrendingTracks(forceRefresh = true)
+    }
+
+    fun showStatusMessage(message: String) {
+        _statusMessage.value = message
+    }
+
+    fun showAiVoicePermissionRequired() {
+        voiceRecordingJob?.cancel()
+        audioVoiceRecorder.cancelRecording()
+        _aiVoiceState.value = AiVoiceSearchUiState.PermissionRequired
+    }
+
+    fun startAiVoiceRecording(targetTab: AppTab) {
+        voiceRecordingJob?.cancel()
+        aiVoiceJob?.cancel()
+        val startResult = audioVoiceRecorder.startRecording()
+        if (startResult.isFailure) {
+            val err = startResult.exceptionOrNull()
+            Log.e("AiVoiceVM", "Unable to start microphone recording", err)
+            if (err != null) {
+                CrashReporter.recordNonFatal("AI_VOICE_MIC_START", err, context = appContext)
+            }
+            _aiVoiceState.value = AiVoiceSearchUiState.Error(
+                err?.localizedMessage ?: "امکان ضبط صدا از میکروفون وجود ندارد."
+            )
+            return
+        }
+
+        _aiVoiceState.value = AiVoiceSearchUiState.Recording(elapsedSeconds = 0, amplitude = 0f)
+        voiceRecordingJob = viewModelScope.launch {
+            val maxTicks = (AudioVoiceRecorder.MAX_DURATION_MS / 120L).toInt()
+            for (tick in 1..maxTicks) {
+                delay(120L)
+                if (!audioVoiceRecorder.isRecording) return@launch
+                val elapsedSec = ((tick * 120L) / 1000L).toInt()
+                val amp = audioVoiceRecorder.sampleAmplitudeNormalized()
+                _aiVoiceState.value = AiVoiceSearchUiState.Recording(
+                    elapsedSeconds = elapsedSec,
+                    amplitude = amp
+                )
+            }
+            if (audioVoiceRecorder.isRecording) {
+                stopRecordingAndAnalyzeWithAi(targetTab)
+            }
+        }
+    }
+
+    fun stopRecordingAndAnalyzeWithAi(targetTab: AppTab) {
+        voiceRecordingJob?.cancel()
+        aiVoiceJob?.cancel()
+        _aiVoiceState.value = AiVoiceSearchUiState.Analyzing
+
+        aiVoiceJob = viewModelScope.launch {
+            try {
+                val audioBytes = withContext(Dispatchers.IO) {
+                    audioVoiceRecorder.stopAndReadBytes().getOrThrow()
+                }
+                val result = aiVoiceSearchRepository.analyzeVoiceAudio(
+                    audioBytes = audioBytes,
+                    mimeType = AudioVoiceRecorder.MIME_TYPE_MP4,
+                    libraryTracks = _allTracks.value,
+                    targetTab = targetTab
+                )
+                applyAiSearchResult(result, targetTab, closeDialog = false)
+                _aiVoiceState.value = AiVoiceSearchUiState.Success(result)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("AiVoiceVM", "AI voice analysis failed", e)
+                CrashReporter.recordNonFatal("AI_VOICE_ANALYZE", e, context = appContext)
+                _aiVoiceState.value = AiVoiceSearchUiState.Error(
+                    e.localizedMessage ?: "تحلیل صوتی با هوش مصنوعی ناموفق بود."
+                )
+            }
+        }
+    }
+
+    fun analyzeSpokenTextWithAi(spokenText: String, targetTab: AppTab) {
+        val cleaned = spokenText.trim()
+        if (cleaned.isBlank()) {
+            _aiVoiceState.value = AiVoiceSearchUiState.Error("عبارت صوتی خالی بود؛ دوباره تلاش کنید.")
+            return
+        }
+        voiceRecordingJob?.cancel()
+        audioVoiceRecorder.cancelRecording()
+        aiVoiceJob?.cancel()
+        _aiVoiceState.value = AiVoiceSearchUiState.Analyzing
+
+        aiVoiceJob = viewModelScope.launch {
+            try {
+                val result = aiVoiceSearchRepository.analyzeTextQuery(
+                    spokenText = cleaned,
+                    libraryTracks = _allTracks.value,
+                    targetTab = targetTab
+                )
+                applyAiSearchResult(result, targetTab, closeDialog = false)
+                _aiVoiceState.value = AiVoiceSearchUiState.Success(result)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("AiVoiceVM", "AI text search interpretation failed", e)
+                CrashReporter.recordNonFatal("AI_VOICE_TEXT_ANALYZE", e, context = appContext)
+                _aiVoiceState.value = AiVoiceSearchUiState.Error(
+                    e.localizedMessage ?: "پردازش هوشمند عبارت صوتی ناموفق بود."
+                )
+            }
+        }
+    }
+
+    fun applyAiSearchResult(
+        result: AiVoiceSearchResult,
+        targetTab: AppTab,
+        closeDialog: Boolean = true
+    ) {
+        val effectiveQuery = when {
+            result.searchQuery.isNotBlank() -> result.searchQuery.trim()
+            result.heardText.isNotBlank() -> result.heardText.trim()
+            else -> ""
+        }
+        if (targetTab == AppTab.TRENDING) {
+            _activeTab.value = AppTab.TRENDING
+            result.suggestedMoodPreset?.let { _trendingPreset.value = it }
+            _trendingSearchQuery.value = effectiveQuery
+            loadTrendingTracks(forceRefresh = true)
+            if (effectiveQuery.isNotBlank()) {
+                _statusMessage.value = "جستجوی هوشمند ترند: «$effectiveQuery»"
+            }
+        } else {
+            _activeTab.value = AppTab.LIBRARY
+            _activeFilter.value = TrackFilter.ALL
+            val matchedTrack = result.matchedTrackIds
+                .firstNotNullOfOrNull { id -> _allTracks.value.firstOrNull { it.id == id } }
+            _searchQuery.value = matchedTrack?.title ?: effectiveQuery
+            val displayQuery = matchedTrack?.title ?: effectiveQuery
+            if (displayQuery.isNotBlank()) {
+                _statusMessage.value = "جستجوی هوشمند: «$displayQuery»"
+            }
+        }
+        if (closeDialog) {
+            _aiVoiceState.value = AiVoiceSearchUiState.Idle
+        }
+    }
+
+    fun cancelAiVoiceRecording() {
+        voiceRecordingJob?.cancel()
+        audioVoiceRecorder.cancelRecording()
+        _aiVoiceState.value = AiVoiceSearchUiState.Idle
+    }
+
+    fun dismissAiVoiceSearch() {
+        voiceRecordingJob?.cancel()
+        aiVoiceJob?.cancel()
+        audioVoiceRecorder.cancelRecording()
+        _aiVoiceState.value = AiVoiceSearchUiState.Idle
+    }
+
     fun setFilter(filter: TrackFilter) {
         _activeFilter.value = filter
+    }
+
+    fun setSpeedVolumeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferences.setSpeedVolumeEnabled(enabled)
+            if (enabled) {
+                autoSpeedVolumeManager?.syncBackgroundServiceFromForeground()
+            }
+        }
+    }
+
+    fun setSpeedVolumeSensitivity(sensitivity: SpeedVolumeSensitivity) {
+        viewModelScope.launch {
+            preferences.setSpeedVolumeSensitivity(sensitivity)
+        }
+    }
+
+    fun setOnlyWhenAndroidAutoConnected(onlyAndroidAuto: Boolean) {
+        viewModelScope.launch {
+            preferences.setOnlyWhenAndroidAutoConnected(onlyAndroidAuto)
+        }
+    }
+
+    fun syncSpeedVolumeBackgroundService() {
+        autoSpeedVolumeManager?.refreshPermissionState()
+        autoSpeedVolumeManager?.syncBackgroundServiceFromForeground()
+    }
+
+    fun refreshAutoSpeedPermission() {
+        autoSpeedVolumeManager?.refreshPermissionState()
     }
 
     fun clearMessage() {
@@ -642,6 +873,9 @@ class MusicPlayerViewModel(
         progressJob?.cancel()
         trendingLoadJob?.cancel()
         autoDriveSyncJob?.cancel()
+        voiceRecordingJob?.cancel()
+        aiVoiceJob?.cancel()
+        audioVoiceRecorder.cancelRecording()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null
         super.onCleared()

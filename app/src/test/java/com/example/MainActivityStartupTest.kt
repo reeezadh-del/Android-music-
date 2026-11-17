@@ -132,6 +132,44 @@ class MainActivityStartupTest {
 
             composeRule.onNodeWithTag("account_profile_button").assertIsDisplayed()
             composeRule.onNodeWithTag("nav_tab_library").assertIsDisplayed()
+            composeRule.onNodeWithTag("voice_search_library_button").assertIsDisplayed().performClick()
+            composeRule.waitForIdle()
+            if (composeRule.onAllNodesWithTag("ai_voice_dismiss_button").fetchSemanticsNodes().isNotEmpty()) {
+                composeRule.onNodeWithTag("ai_voice_system_fallback_button").assertIsDisplayed()
+                composeRule.onNodeWithTag("ai_voice_dismiss_button").performClick()
+                composeRule.waitForIdle()
+            } else if (composeRule.onAllNodesWithTag("ai_voice_cancel_button").fetchSemanticsNodes().isNotEmpty()) {
+                composeRule.onNodeWithTag("ai_voice_cancel_button").performClick()
+                composeRule.waitForIdle()
+            }
+
+            composeRule.onNodeWithTag("nav_tab_trending").performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("voice_search_trending_button").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("voice_search_trending_button").assertIsDisplayed()
+
+            composeRule.onNodeWithTag("nav_tab_library").performClick()
+            composeRule.waitForIdle()
+
+            composeRule.onNodeWithTag("auto_speed_volume_button").assertIsDisplayed().performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("speed_volume_switch").assertIsDisplayed()
+            composeRule.onNodeWithTag("speed_volume_sensitivity_STRONG").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("speed_volume_close_button").performClick()
+            composeRule.waitForIdle()
+
+            composeRule.onNodeWithTag("driving_mode_button").assertIsDisplayed().performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("driving_mode_overlay").assertIsDisplayed()
+            composeRule.onNodeWithTag("driving_mode_speed_value").assertIsDisplayed()
+            composeRule.onNodeWithTag("driving_mode_volume_value").assertIsDisplayed()
+            composeRule.onNodeWithTag("driving_mode_play_pause").assertIsDisplayed()
+            composeRule.onNodeWithTag("driving_mode_sensitivity_BALANCED").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("driving_mode_exit_button").performClick()
+            composeRule.waitForIdle()
 
             composeRule.onNodeWithTag("account_profile_button").performClick()
             composeRule.waitForIdle()

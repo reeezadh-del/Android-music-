@@ -186,4 +186,81 @@ class ExampleUnitTest {
         assertEquals(2, TrackFilter.entries.size)
         assertEquals(3, RepeatModeOption.entries.size)
     }
+
+    @Test
+    fun `speed volume calculator scales volume monotonically only when connected to android auto and enabled`() {
+        val balanced = com.example.player.SpeedVolumeSensitivity.BALANCED
+
+        // When not connected or disabled, always return full 1.0f volume regardless of speed
+        assertEquals(
+            1.0f,
+            com.example.player.SpeedVolumeCalculator.computeTargetVolume(
+                speedKmh = 0f,
+                sensitivity = balanced,
+                isAndroidAutoConnected = false,
+                isEnabled = true
+            ),
+            0.0001f
+        )
+        assertEquals(
+            1.0f,
+            com.example.player.SpeedVolumeCalculator.computeTargetVolume(
+                speedKmh = 30f,
+                sensitivity = balanced,
+                isAndroidAutoConnected = true,
+                isEnabled = false
+            ),
+            0.0001f
+        )
+
+        // When connected & enabled, volume increases cleanly with speed
+        val vLow = com.example.player.SpeedVolumeCalculator.computeTargetVolume(
+            speedKmh = 5f,
+            sensitivity = balanced,
+            isAndroidAutoConnected = true,
+            isEnabled = true
+        )
+        val vCity = com.example.player.SpeedVolumeCalculator.computeTargetVolume(
+            speedKmh = 45f,
+            sensitivity = balanced,
+            isAndroidAutoConnected = true,
+            isEnabled = true
+        )
+        val vHighway = com.example.player.SpeedVolumeCalculator.computeTargetVolume(
+            speedKmh = 85f,
+            sensitivity = balanced,
+            isAndroidAutoConnected = true,
+            isEnabled = true
+        )
+        val vMax = com.example.player.SpeedVolumeCalculator.computeTargetVolume(
+            speedKmh = 120f,
+            sensitivity = balanced,
+            isAndroidAutoConnected = true,
+            isEnabled = true
+        )
+
+        assertEquals(balanced.minVolume, vLow, 0.0001f)
+        assertTrue(vCity > vLow)
+        assertTrue(vHighway > vCity)
+        assertTrue(vMax > vHighway)
+        assertEquals(1.0f, vMax, 0.0001f)
+
+        // When onlyWhenAndroidAutoConnected is false, background service scales volume even without Android Auto
+        val standaloneCity = com.example.player.SpeedVolumeCalculator.computeTargetVolume(
+            speedKmh = 60f,
+            sensitivity = balanced,
+            isAndroidAutoConnected = false,
+            isEnabled = true,
+            onlyWhenAndroidAutoConnected = false
+        )
+        val standaloneHighway = com.example.player.SpeedVolumeCalculator.computeTargetVolume(
+            speedKmh = 100f,
+            sensitivity = balanced,
+            isAndroidAutoConnected = false,
+            isEnabled = true,
+            onlyWhenAndroidAutoConnected = false
+        )
+        assertTrue(standaloneCity > balanced.minVolume)
+        assertTrue(standaloneHighway > standaloneCity)
+    }
 }

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -71,6 +72,7 @@ fun TrendingIranianScreen(
     onSearchQueryChange: (String) -> Unit,
     onSubmitSearch: () -> Unit,
     onClearSearch: () -> Unit,
+    onVoiceSearchClick: () -> Unit = {},
     onRefresh: () -> Unit,
     onPlayTrack: (MusicTrack) -> Unit,
     onToggleFavorite: (MusicTrack) -> Unit,
@@ -184,12 +186,32 @@ fun TrendingIranianScreen(
                 }
             },
             trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = {
-                        focusManager.clearFocus()
-                        onClearSearch()
-                    }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "پاک کردن")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                focusManager.clearFocus()
+                                onClearSearch()
+                            },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "پاک کردن")
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            focusManager.clearFocus()
+                            onVoiceSearchClick()
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("voice_search_trending_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Mic,
+                            contentDescription = stringResource(R.string.voice_search_cd),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             },

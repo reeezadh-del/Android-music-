@@ -22,7 +22,10 @@ data class StoredMusicPrefs(
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatModeOption = RepeatModeOption.OFF,
     val lastTrackId: String? = null,
-    val isGuestMode: Boolean = false
+    val isGuestMode: Boolean = false,
+    val speedVolumeEnabled: Boolean = true,
+    val speedVolumeSensitivity: SpeedVolumeSensitivity = SpeedVolumeSensitivity.BALANCED,
+    val onlyWhenAndroidAutoConnected: Boolean = false
 )
 
 class MusicPreferences(private val context: Context) {
@@ -37,10 +40,14 @@ class MusicPreferences(private val context: Context) {
         val REPEAT_MODE = stringPreferencesKey("repeat_mode")
         val LAST_TRACK_ID = stringPreferencesKey("last_track_id")
         val IS_GUEST_MODE = booleanPreferencesKey("is_guest_mode")
+        val SPEED_VOLUME_ENABLED = booleanPreferencesKey("speed_volume_enabled")
+        val SPEED_VOLUME_SENSITIVITY = stringPreferencesKey("speed_volume_sensitivity")
+        val ONLY_WHEN_ANDROID_AUTO = booleanPreferencesKey("speed_volume_only_android_auto")
     }
 
     val prefsFlow: Flow<StoredMusicPrefs> = context.musicDataStore.data.map { prefs ->
         val repeatStr = prefs[Keys.REPEAT_MODE] ?: RepeatModeOption.OFF.name
+        val sensitivityStr = prefs[Keys.SPEED_VOLUME_SENSITIVITY] ?: SpeedVolumeSensitivity.BALANCED.name
         val onlineJson = prefs[Keys.FAVORITE_ONLINE_TRACKS]
         val onlineTracks = if (!onlineJson.isNullOrBlank()) {
             runCatching { json.decodeFromString<List<MusicTrack>>(onlineJson) }.getOrDefault(emptyList())
@@ -55,7 +62,11 @@ class MusicPreferences(private val context: Context) {
             repeatMode = runCatching { RepeatModeOption.valueOf(repeatStr) }
                 .getOrDefault(RepeatModeOption.OFF),
             lastTrackId = prefs[Keys.LAST_TRACK_ID],
-            isGuestMode = prefs[Keys.IS_GUEST_MODE] ?: false
+            isGuestMode = prefs[Keys.IS_GUEST_MODE] ?: false,
+            speedVolumeEnabled = prefs[Keys.SPEED_VOLUME_ENABLED] ?: true,
+            speedVolumeSensitivity = runCatching { SpeedVolumeSensitivity.valueOf(sensitivityStr) }
+                .getOrDefault(SpeedVolumeSensitivity.BALANCED),
+            onlyWhenAndroidAutoConnected = prefs[Keys.ONLY_WHEN_ANDROID_AUTO] ?: false
         )
     }
 
@@ -145,6 +156,24 @@ class MusicPreferences(private val context: Context) {
     suspend fun setGuestMode(enabled: Boolean) {
         context.musicDataStore.edit { prefs ->
             prefs[Keys.IS_GUEST_MODE] = enabled
+        }
+    }
+
+    suspend fun setSpeedVolumeEnabled(enabled: Boolean) {
+        context.musicDataStore.edit { prefs ->
+            prefs[Keys.SPEED_VOLUME_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setSpeedVolumeSensitivity(sensitivity: SpeedVolumeSensitivity) {
+        context.musicDataStore.edit { prefs ->
+            prefs[Keys.SPEED_VOLUME_SENSITIVITY] = sensitivity.name
+        }
+    }
+
+    suspend fun setOnlyWhenAndroidAutoConnected(onlyAndroidAuto: Boolean) {
+        context.musicDataStore.edit { prefs ->
+            prefs[Keys.ONLY_WHEN_ANDROID_AUTO] = onlyAndroidAuto
         }
     }
 

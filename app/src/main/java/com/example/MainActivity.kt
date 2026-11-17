@@ -2,11 +2,14 @@ package com.example
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -19,6 +22,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +40,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -43,12 +48,15 @@ import androidx.compose.material.icons.rounded.AlternateEmail
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -97,14 +105,20 @@ import com.example.auth.UserAccountRepository
 import com.example.auth.authStateFlow
 import com.example.diagnostics.CrashReporter
 import com.example.diagnostics.DiagnosticLogRepository
+import com.example.diagnostics.configureAppCheck
 import com.example.drive.DriveDbSnapshot
 import com.example.player.AppTab
+import com.example.player.AutoSpeedVolumeManager
 import com.example.player.RepeatModeOption
 import com.example.player.StoredMusicPrefs
 import com.example.player.TrackFilter
+import com.example.player.VoiceSearchHelper
 import com.example.ui.components.AccountDriveDialog
+import com.example.ui.components.AiVoiceSearchDialog
+import com.example.ui.components.AutoSpeedVolumeDialog
 import com.example.ui.components.CrashReportDialog
 import com.example.ui.components.DiagnosticsHistoryDialog
+import com.example.ui.components.DrivingModeOverlay
 import com.example.ui.components.FullNowPlayingSheet
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.components.TrackRowItem
@@ -123,6 +137,8 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        volumeControlStream = AudioManager.STREAM_MUSIC
+        configureAppCheck(this, intent)
         enableEdgeToEdge()
         setContent {
             AvaPlayerTheme(darkTheme = true) {
@@ -191,7 +207,8 @@ fun AvaAuthRoot() {
                                 trendingRepository = application.trendingRepository,
                                 userAccountRepository = null,
                                 driveDbManager = application.driveDbManager,
-                                currentUserId = "guest"
+                                currentUserId = "guest",
+                                autoSpeedVolumeManager = application.autoSpeedVolumeManager
                             )
                         }
                     }
@@ -675,7 +692,8 @@ fun AvaAuthRoot() {
                                     trendingRepository = application.trendingRepository,
                                     userAccountRepository = UserAccountRepository(application),
                                     driveDbManager = application.driveDbManager,
-                                    currentUserId = user.uid
+                                    currentUserId = user.uid,
+                                    autoSpeedVolumeManager = application.autoSpeedVolumeManager
                                 )
                             }
                         }
@@ -814,9 +832,48 @@ fun SimpleMusicPlayerScreen(
     val isSyncingDrive by viewModel.isSyncingDrive.collectAsStateWithLifecycle()
     val driveSyncMessage by viewModel.driveSyncMessage.collectAsStateWithLifecycle()
     val favoriteCount by viewModel.favoriteCount.collectAsStateWithLifecycle()
+    val aiVoiceState by viewModel.aiVoiceState.collectAsStateWithLifecycle()
+    val autoSpeedVolumeState by viewModel.autoSpeedVolumeState.collectAsStateWithLifecycle()
 
     var isNowPlayingOpen by rememberSaveable { mutableStateOf(false) }
     var isAccountDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var isAutoSpeedDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var isDrivingModeOpen by rememberSaveable { mutableStateOf(false) }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { results ->
+            viewModel.refreshAutoSpeedPermission()
+            val granted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            if (granted) {
+                viewModel.setSpeedVolumeEnabled(true)
+                viewModel.syncSpeedVolumeBackgroundService()
+            }
+        }
+    )
+
+    LaunchedEffect(
+        playerState.isPlaying,
+        autoSpeedVolumeState.isActiveForDriving,
+        autoSpeedVolumeState.hasLocationPermission
+    ) {
+        if (playerState.isPlaying &&
+            autoSpeedVolumeState.isActiveForDriving &&
+            autoSpeedVolumeState.hasLocationPermission
+        ) {
+            viewModel.syncSpeedVolumeBackgroundService()
+        }
+    }
+
+    val requestAutoSpeedLocationPermission: () -> Unit = {
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
 
     val audioPermission = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -843,6 +900,62 @@ fun SimpleMusicPlayerScreen(
             }
         }
     )
+
+    var voiceSearchTargetTab by rememberSaveable { mutableStateOf(AppTab.LIBRARY) }
+    val systemSpeechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+        onResult = { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val rawSpoken = result.data
+                    ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                    ?.firstOrNull()
+                    ?.trim()
+                if (!rawSpoken.isNullOrBlank()) {
+                    viewModel.analyzeSpokenTextWithAi(rawSpoken, voiceSearchTargetTab)
+                } else {
+                    viewModel.showStatusMessage(context.getString(R.string.voice_search_no_match))
+                }
+            }
+        }
+    )
+
+    val launchSystemSpeechForAi: () -> Unit = {
+        val prompt = if (voiceSearchTargetTab == AppTab.TRENDING) {
+            context.getString(R.string.voice_search_prompt_trending)
+        } else {
+            context.getString(R.string.voice_search_prompt_library)
+        }
+        val speechIntent = VoiceSearchHelper.buildSpeechIntent(prompt)
+        try {
+            systemSpeechLauncher.launch(speechIntent)
+        } catch (_: ActivityNotFoundException) {
+            viewModel.showStatusMessage(context.getString(R.string.voice_search_unavailable))
+        }
+    }
+
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { granted ->
+            if (granted) {
+                viewModel.startAiVoiceRecording(voiceSearchTargetTab)
+            } else {
+                viewModel.showAiVoicePermissionRequired()
+            }
+        }
+    )
+
+    val launchVoiceSearch: (AppTab) -> Unit = { targetTab ->
+        voiceSearchTargetTab = targetTab
+        val micGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (micGranted) {
+            viewModel.startAiVoiceRecording(targetTab)
+        } else {
+            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     val triggerScan: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(
@@ -1103,9 +1216,26 @@ fun SimpleMusicPlayerScreen(
                                         Icon(Icons.Rounded.Search, contentDescription = null)
                                     },
                                     trailingIcon = {
-                                        if (searchQuery.isNotEmpty()) {
-                                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                                Icon(Icons.Rounded.Close, contentDescription = "پاک کردن")
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (searchQuery.isNotEmpty()) {
+                                                IconButton(
+                                                    onClick = { viewModel.setSearchQuery("") },
+                                                    modifier = Modifier.size(48.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.Close, contentDescription = "پاک کردن")
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = { launchVoiceSearch(AppTab.LIBRARY) },
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .testTag("voice_search_library_button")
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Mic,
+                                                    contentDescription = stringResource(R.string.voice_search_cd),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
                                             }
                                         }
                                     },
@@ -1116,8 +1246,11 @@ fun SimpleMusicPlayerScreen(
                                         .testTag("search_music_input")
                                 )
 
-                                // Filter Chips
+                                // Filter Chips + Android Auto Speed Volume Trigger
                                 Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -1140,6 +1273,41 @@ fun SimpleMusicPlayerScreen(
                                             modifier = Modifier.testTag("filter_${filter.name}")
                                         )
                                     }
+
+                                    FilterChip(
+                                        selected = isDrivingModeOpen,
+                                        onClick = {
+                                            viewModel.syncSpeedVolumeBackgroundService()
+                                            isDrivingModeOpen = true
+                                        },
+                                        label = { Text(stringResource(R.string.driving_mode_button)) },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Speed,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("driving_mode_button")
+                                    )
+
+                                    FilterChip(
+                                        selected = autoSpeedVolumeState.isActiveForDriving &&
+                                            autoSpeedVolumeState.hasLocationPermission,
+                                        onClick = {
+                                            viewModel.refreshAutoSpeedPermission()
+                                            isAutoSpeedDialogOpen = true
+                                        },
+                                        label = { Text(stringResource(R.string.auto_speed_volume_chip)) },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.DirectionsCar,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("auto_speed_volume_button")
+                                    )
                                 }
 
                                 // Song List or Empty State
@@ -1261,6 +1429,7 @@ fun SimpleMusicPlayerScreen(
                                 onSearchQueryChange = viewModel::setTrendingSearchQuery,
                                 onSubmitSearch = viewModel::submitTrendingSearch,
                                 onClearSearch = viewModel::clearTrendingSearch,
+                                onVoiceSearchClick = { launchVoiceSearch(AppTab.TRENDING) },
                                 onRefresh = { viewModel.loadTrendingTracks(forceRefresh = true) },
                                 onPlayTrack = viewModel::playTrendingTrack,
                                 onToggleFavorite = viewModel::toggleFavorite
@@ -1270,6 +1439,28 @@ fun SimpleMusicPlayerScreen(
                 }
             }
         }
+
+        AiVoiceSearchDialog(
+            state = aiVoiceState,
+            targetTab = voiceSearchTargetTab,
+            onStopAndAnalyze = { viewModel.stopRecordingAndAnalyzeWithAi(voiceSearchTargetTab) },
+            onCancelRecording = viewModel::cancelAiVoiceRecording,
+            onRetryRecord = { launchVoiceSearch(voiceSearchTargetTab) },
+            onRequestMicPermission = {
+                recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            },
+            onUseSystemSpeech = {
+                viewModel.dismissAiVoiceSearch()
+                launchSystemSpeechForAi()
+            },
+            onApplyToLibrary = { res ->
+                viewModel.applyAiSearchResult(res, AppTab.LIBRARY, closeDialog = true)
+            },
+            onApplyToTrending = { res ->
+                viewModel.applyAiSearchResult(res, AppTab.TRENDING, closeDialog = true)
+            },
+            onDismiss = viewModel::dismissAiVoiceSearch
+        )
 
         if (isAccountDialogOpen) {
             AccountDriveDialog(
@@ -1301,6 +1492,30 @@ fun SimpleMusicPlayerScreen(
             )
         }
 
+        if (isAutoSpeedDialogOpen) {
+            AutoSpeedVolumeDialog(
+                state = autoSpeedVolumeState,
+                onToggleEnabled = { enabled ->
+                    viewModel.setSpeedVolumeEnabled(enabled)
+                    if (enabled && !AutoSpeedVolumeManager.hasLocationPermission(context)) {
+                        requestAutoSpeedLocationPermission()
+                    } else if (enabled) {
+                        viewModel.syncSpeedVolumeBackgroundService()
+                    }
+                },
+                onToggleOnlyAndroidAuto = { onlyAndroidAuto ->
+                    viewModel.setOnlyWhenAndroidAutoConnected(onlyAndroidAuto)
+                },
+                onSelectSensitivity = viewModel::setSpeedVolumeSensitivity,
+                onRequestLocationPermission = requestAutoSpeedLocationPermission,
+                onDismiss = { isAutoSpeedDialogOpen = false },
+                onOpenDrivingMode = {
+                    viewModel.syncSpeedVolumeBackgroundService()
+                    isDrivingModeOpen = true
+                }
+            )
+        }
+
         AnimatedVisibility(
             visible = isNowPlayingOpen && activeTrack != null,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -1321,9 +1536,50 @@ fun SimpleMusicPlayerScreen(
                     onSeekTo = viewModel::seekTo,
                     onToggleShuffle = viewModel::toggleShuffle,
                     onCycleRepeat = viewModel::cycleRepeatMode,
-                    onToggleFavorite = { viewModel.toggleFavorite(activeTrack) }
+                    onToggleFavorite = { viewModel.toggleFavorite(activeTrack) },
+                    isAutoSpeedActive = autoSpeedVolumeState.isActiveForDriving &&
+                        autoSpeedVolumeState.hasLocationPermission,
+                    onOpenAutoSpeedVolume = {
+                        viewModel.refreshAutoSpeedPermission()
+                        isAutoSpeedDialogOpen = true
+                    },
+                    onOpenDrivingMode = {
+                        viewModel.syncSpeedVolumeBackgroundService()
+                        isDrivingModeOpen = true
+                    }
                 )
             }
+        }
+
+        AnimatedVisibility(
+            visible = isDrivingModeOpen,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+        ) {
+            DrivingModeOverlay(
+                speedState = autoSpeedVolumeState,
+                currentTrack = activeTrack,
+                isPlaying = playerState.isPlaying,
+                progress = progress,
+                onTogglePlayPause = viewModel::togglePlayPause,
+                onSkipNext = viewModel::skipNext,
+                onSkipPrevious = viewModel::skipPrevious,
+                onToggleSpeedAuto = { enabled ->
+                    viewModel.setSpeedVolumeEnabled(enabled)
+                    if (enabled && !AutoSpeedVolumeManager.hasLocationPermission(context)) {
+                        requestAutoSpeedLocationPermission()
+                    } else if (enabled) {
+                        viewModel.syncSpeedVolumeBackgroundService()
+                    }
+                },
+                onSelectSensitivity = viewModel::setSpeedVolumeSensitivity,
+                onRequestLocationPermission = requestAutoSpeedLocationPermission,
+                onOpenSettings = {
+                    viewModel.refreshAutoSpeedPermission()
+                    isAutoSpeedDialogOpen = true
+                },
+                onClose = { isDrivingModeOpen = false }
+            )
         }
     }
 }
