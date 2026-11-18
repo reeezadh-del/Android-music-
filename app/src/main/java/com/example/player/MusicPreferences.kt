@@ -98,6 +98,15 @@ class MusicPreferences(private val context: Context) {
         return added
     }
 
+    suspend fun setCloudFavoritesSnapshot(cloudTracks: List<MusicTrack>) {
+        val cloudIds = cloudTracks.map { it.id }.toSet()
+        val onlineTracks = cloudTracks.filter { it.isOnline }.map { it.copy(isFavorite = true) }
+        context.musicDataStore.edit { prefs ->
+            prefs[Keys.FAVORITE_IDS] = cloudIds
+            prefs[Keys.FAVORITE_ONLINE_TRACKS] = json.encodeToString(onlineTracks)
+        }
+    }
+
     suspend fun addImportedUris(uris: List<String>) {
         if (uris.isEmpty()) return
         context.musicDataStore.edit { prefs ->

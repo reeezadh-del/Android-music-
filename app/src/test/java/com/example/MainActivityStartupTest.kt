@@ -149,6 +149,40 @@ class MainActivityStartupTest {
             }
             composeRule.onNodeWithTag("voice_search_trending_button").assertIsDisplayed()
 
+            composeRule.onNodeWithTag("nav_tab_favorites").performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("favorites_screen").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("favorites_screen").assertIsDisplayed()
+            composeRule.onNodeWithTag("favorites_empty_card").assertIsDisplayed()
+            composeRule.onNodeWithTag("favorites_upgrade_google_button").assertIsDisplayed()
+
+            val favTrack = com.example.player.MusicTrack(
+                id = "fav_test_1",
+                title = "بارون",
+                artist = "محسن یگانه",
+                album = "تک‌آهنگ",
+                durationMs = 195_000L,
+                mediaUri = "https://example.com/baroon.mp3",
+                artworkUri = "",
+                isOnline = true
+            )
+            kotlinx.coroutines.runBlocking {
+                app.preferences.toggleFavorite(favTrack.id, favTrack)
+            }
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("favorite_row_fav_test_1").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("favorite_row_fav_test_1").assertIsDisplayed()
+            composeRule.onNodeWithTag("favorites_play_all_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("favorites_shuffle_all_button").assertIsDisplayed()
+
+            composeRule.onNodeWithTag("favorites_remove_btn_fav_test_1").performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("favorites_empty_card").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("favorites_empty_card").assertIsDisplayed()
+
             composeRule.onNodeWithTag("nav_tab_library").performClick()
             composeRule.waitForIdle()
 

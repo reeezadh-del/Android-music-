@@ -263,4 +263,88 @@ class ExampleUnitTest {
         assertTrue(standaloneCity > balanced.minVolume)
         assertTrue(standaloneHighway > standaloneCity)
     }
+
+    @Test
+    fun `favorite tracks repository sanitizes document ids and roundtrips track metadata`() {
+        assertEquals(3, com.example.player.AppTab.entries.size)
+        assertTrue(com.example.player.AppTab.entries.contains(com.example.player.AppTab.FAVORITES))
+
+        assertEquals(
+            "ir_musicsweb_101",
+            com.example.player.FavoriteTracksRepository.toFirestoreDocId("ir_musicsweb_101")
+        )
+        assertEquals(
+            "ms_42",
+            com.example.player.FavoriteTracksRepository.toFirestoreDocId("ms_42")
+        )
+
+        val dirtyId = "content://media/external:123/track?name=test"
+        val sanitizedA = com.example.player.FavoriteTracksRepository.toFirestoreDocId(dirtyId)
+        val sanitizedB = com.example.player.FavoriteTracksRepository.toFirestoreDocId(dirtyId)
+        assertEquals(sanitizedA, sanitizedB)
+        assertTrue(sanitizedA.matches(Regex("^[a-zA-Z0-9_\\-]+$")))
+        assertTrue(sanitizedA.length in 1..128)
+
+        val longId = "x".repeat(200)
+        val sanitizedLong = com.example.player.FavoriteTracksRepository.toFirestoreDocId(longId)
+        assertTrue(sanitizedLong.matches(Regex("^[a-zA-Z0-9_\\-]+$")))
+        assertTrue(sanitizedLong.length <= 128)
+
+        val sampleTrack = MusicTrack(
+            id = "ir_remix_99",
+            title = "شبای تهران",
+            artist = "علیرضا طلیسچی",
+            album = "ترند اینستا",
+            durationMs = 212_000L,
+            mediaUri = "https://dl.example.com/music/test.mp3",
+            artworkUri = "https://dl.example.com/art.jpg",
+            isFavorite = true,
+            isImported = false,
+            isOnline = true,
+            isRemix = true,
+            isInstaTrend = true,
+            isFullTrack = true
+        )
+        val createMap = com.example.player.FavoriteTracksRepository.buildCreatePayload(
+            userId = "uid_alice",
+            favoriteId = "ir_remix_99",
+            track = sampleTrack,
+            addedAtMs = 1700000000000L
+        )
+        assertEquals("uid_alice", createMap["userId"])
+        assertEquals("ir_remix_99", createMap["favoriteId"])
+        assertEquals("ir_remix_99", createMap["trackId"])
+        assertFalse(createMap.containsKey("id"))
+        assertEquals(true, createMap["onlineTrack"])
+        assertEquals(true, createMap["remixTrack"])
+
+        val firestoreModel = com.example.player.FirestoreFavoriteTrack(
+            id = "ir_remix_99",
+            userId = "uid_alice",
+            favoriteId = "ir_remix_99",
+            trackId = sampleTrack.id,
+            title = sampleTrack.title,
+            artist = sampleTrack.artist,
+            album = sampleTrack.album,
+            durationMs = sampleTrack.durationMs,
+            mediaUri = sampleTrack.mediaUri,
+            artworkUri = sampleTrack.artworkUri,
+            importedTrack = sampleTrack.isImported,
+            onlineTrack = sampleTrack.isOnline,
+            remixTrack = sampleTrack.isRemix,
+            instaTrend = sampleTrack.isInstaTrend,
+            fullTrack = sampleTrack.isFullTrack,
+            addedAtMs = 1700000000000L
+        )
+        val roundTripped = firestoreModel.toMusicTrack()
+        assertEquals(sampleTrack.id, roundTripped.id)
+        assertEquals(sampleTrack.title, roundTripped.title)
+        assertEquals(sampleTrack.artist, roundTripped.artist)
+        assertEquals(sampleTrack.mediaUri, roundTripped.mediaUri)
+        assertTrue(roundTripped.isFavorite)
+        assertTrue(roundTripped.isOnline)
+        assertTrue(roundTripped.isRemix)
+        assertTrue(roundTripped.isInstaTrend)
+    }
 }
+

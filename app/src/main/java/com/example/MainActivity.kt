@@ -109,6 +109,7 @@ import com.example.diagnostics.configureAppCheck
 import com.example.drive.DriveDbSnapshot
 import com.example.player.AppTab
 import com.example.player.AutoSpeedVolumeManager
+import com.example.player.FavoriteTracksRepository
 import com.example.player.RepeatModeOption
 import com.example.player.StoredMusicPrefs
 import com.example.player.TrackFilter
@@ -123,6 +124,7 @@ import com.example.ui.components.FullNowPlayingSheet
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.components.TrackRowItem
 import com.example.ui.screens.AuthGateScreen
+import com.example.ui.screens.FavoritesScreen
 import com.example.ui.screens.TrendingIranianScreen
 import com.example.ui.theme.AvaPlayerTheme
 import com.example.ui.viewmodel.MusicPlayerViewModel
@@ -208,7 +210,8 @@ fun AvaAuthRoot() {
                                 userAccountRepository = null,
                                 driveDbManager = application.driveDbManager,
                                 currentUserId = "guest",
-                                autoSpeedVolumeManager = application.autoSpeedVolumeManager
+                                autoSpeedVolumeManager = application.autoSpeedVolumeManager,
+                                favoriteTracksRepository = null
                             )
                         }
                     }
@@ -693,7 +696,8 @@ fun AvaAuthRoot() {
                                     userAccountRepository = UserAccountRepository(application),
                                     driveDbManager = application.driveDbManager,
                                     currentUserId = user.uid,
-                                    autoSpeedVolumeManager = application.autoSpeedVolumeManager
+                                    autoSpeedVolumeManager = application.autoSpeedVolumeManager,
+                                    favoriteTracksRepository = FavoriteTracksRepository(application)
                                 )
                             }
                         }
@@ -832,6 +836,8 @@ fun SimpleMusicPlayerScreen(
     val isSyncingDrive by viewModel.isSyncingDrive.collectAsStateWithLifecycle()
     val driveSyncMessage by viewModel.driveSyncMessage.collectAsStateWithLifecycle()
     val favoriteCount by viewModel.favoriteCount.collectAsStateWithLifecycle()
+    val favoritesUiState by viewModel.favoritesUiState.collectAsStateWithLifecycle()
+    val favoritesSearchQuery by viewModel.favoritesSearchQuery.collectAsStateWithLifecycle()
     val aiVoiceState by viewModel.aiVoiceState.collectAsStateWithLifecycle()
     val autoSpeedVolumeState by viewModel.autoSpeedVolumeState.collectAsStateWithLifecycle()
 
@@ -1037,6 +1043,18 @@ fun SimpleMusicPlayerScreen(
                             },
                             label = { Text(stringResource(R.string.tab_library)) },
                             modifier = Modifier.testTag("nav_tab_library")
+                        )
+                        NavigationBarItem(
+                            selected = activeTab == AppTab.FAVORITES,
+                            onClick = { viewModel.selectTab(AppTab.FAVORITES) },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Favorite,
+                                    contentDescription = stringResource(R.string.tab_favorites)
+                                )
+                            },
+                            label = { Text(stringResource(R.string.tab_favorites)) },
+                            modifier = Modifier.testTag("nav_tab_favorites")
                         )
                         NavigationBarItem(
                             selected = activeTab == AppTab.TRENDING,
@@ -1412,6 +1430,24 @@ fun SimpleMusicPlayerScreen(
                                     }
                                 }
                             }
+                        }
+
+                        AppTab.FAVORITES -> {
+                            FavoritesScreen(
+                                uiState = favoritesUiState,
+                                searchQuery = favoritesSearchQuery,
+                                currentTrackId = activeTrack?.id,
+                                isPlaying = playerState.isPlaying,
+                                isGuestMode = isGuestMode,
+                                onSearchQueryChange = viewModel::setFavoritesSearchQuery,
+                                onVoiceSearchClick = { launchVoiceSearch(AppTab.FAVORITES) },
+                                onPlayTrack = viewModel::playFavoriteTrack,
+                                onPlayAll = { viewModel.playAllFavorites(shuffle = false) },
+                                onShuffleAll = { viewModel.playAllFavorites(shuffle = true) },
+                                onRemoveFavorite = viewModel::toggleFavorite,
+                                onRetryCloud = viewModel::retryCloudFavorites,
+                                onUpgradeToGoogle = onUpgradeToGoogle
+                            )
                         }
 
                         AppTab.TRENDING -> {

@@ -21,6 +21,7 @@ import com.example.player.AppTab
 import com.example.player.AudioVoiceRecorder
 import com.example.player.AutoSpeedVolumeManager
 import com.example.player.AutoSpeedVolumeState
+import com.example.player.FavoriteTracksRepository
 import com.example.player.MusicLibraryRepository
 import com.example.player.MusicPlaybackService
 import com.example.player.MusicPreferences
@@ -33,6 +34,9 @@ import com.example.player.TrendingPreset
 import com.example.player.TrendingIranianRepository
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,9 +45,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -56,6 +60,22 @@ data class PlayerUiState(
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatModeOption = RepeatModeOption.OFF
 )
+
+sealed interface FavoritesUiState {
+    data object Loading : FavoritesUiState
+    data class Success(
+        val tracks: List<MusicTrack>,
+        val totalCount: Int,
+        val isCloudBacked: Boolean,
+        val isSyncing: Boolean
+    ) : FavoritesUiState
+
+    data class Error(
+        val message: String,
+        val fallbackTracks: List<MusicTrack>,
+        val isCloudBacked: Boolean
+    ) : FavoritesUiState
+}
 
 sealed interface AiVoiceSearchUiState {
     data object Idle : AiVoiceSearchUiState
@@ -74,7 +94,8 @@ class MusicPlayerViewModel(
     private val userAccountRepository: UserAccountRepository?,
     private val driveDbManager: GoogleDriveDatabaseManager,
     val currentUserId: String,
-    private val autoSpeedVolumeManager: AutoSpeedVolumeManager? = null
+    private val autoSpeedVolumeManager: AutoSpeedVolumeManager? = null,
+    private val favoriteTracksRepository: FavoriteTracksRepository? = null
 ) : ViewModel() {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -84,6 +105,7 @@ class MusicPlayerViewModel(
     private var autoDriveSyncJob: Job? = null
     private var voiceRecordingJob: Job? = null
     private var aiVoiceJob: Job? = null
+    private var cloudFavoritesJob: Job? = null
 
     private val aiVoiceSearchRepository by lazy { AiVoiceSearchRepository() }
     private val audioVoiceRecorder by lazy { AudioVoiceRecorder(appContext) }
@@ -149,8 +171,22 @@ class MusicPlayerViewModel(
     private val _aiVoiceState = MutableStateFlow<AiVoiceSearchUiState>(AiVoiceSearchUiState.Idle)
     val aiVoiceState: StateFlow<AiVoiceSearchUiState> = _aiVoiceState.asStateFlow()
 
+    private val _cloudFavorites = MutableStateFlow<List<MusicTrack>?>(null)
+    private val _favoritesSearchQuery = MutableStateFlow("")
+    val favoritesSearchQuery: StateFlow<String> = _favoritesSearchQuery.asStateFlow()
+
+    private val _favoritesCloudError = MutableStateFlow<String?>(null)
+    private val _isSyncingFavorites = MutableStateFlow(false)
+    private var hasCompletedInitialCloudBackfill = false
+
     val autoSpeedVolumeState: StateFlow<AutoSpeedVolumeState> =
         autoSpeedVolumeManager?.state ?: MutableStateFlow(AutoSpeedVolumeState()).asStateFlow()
+
+    private fun isCloudFavoritesActive(): Boolean {
+        if (favoriteTracksRepository == null || currentUserId == "guest") return false
+        val signedUid = runCatching { Firebase.auth.currentUser?.uid }.getOrNull()
+        return !signedUid.isNullOrBlank() && signedUid == currentUserId
+    }
 
     val filteredTracks: StateFlow<List<MusicTrack>> = combine(
         _allTracks,
@@ -172,6 +208,54 @@ class MusicPlayerViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val favoritesUiState: StateFlow<FavoritesUiState> = combine(
+        _allTracks,
+        _favoriteOnlineTracks,
+        _cloudFavorites,
+        _favoritesSearchQuery,
+        combine(_favoritesCloudError, _isSyncingFavorites) { err, syncing -> err to syncing }
+    ) { localTracks, favOnline, cloudTracks, query, (cloudError, isSyncing) ->
+        val cloudBacked = isCloudFavoritesActive()
+        val localMerged = (localTracks.filter { it.isFavorite } + favOnline).distinctBy { it.id }
+
+        if (cloudBacked && cloudTracks == null && cloudError == null) {
+            FavoritesUiState.Loading
+        } else {
+            val baseTracks = if (cloudBacked && cloudTracks != null) {
+                val localById = localTracks.associateBy { it.id }
+                cloudTracks.map { cloudTrack ->
+                    localById[cloudTrack.id]?.copy(isFavorite = true) ?: cloudTrack.copy(isFavorite = true)
+                }
+            } else {
+                localMerged
+            }
+            val q = query.trim().lowercase()
+            val filtered = if (q.isEmpty()) {
+                baseTracks
+            } else {
+                baseTracks.filter {
+                    it.title.lowercase().contains(q) ||
+                        it.artist.lowercase().contains(q) ||
+                        it.album.lowercase().contains(q)
+                }
+            }
+            if (cloudError != null && cloudBacked) {
+                FavoritesUiState.Error(
+                    message = cloudError,
+                    fallbackTracks = filtered,
+                    isCloudBacked = true
+                )
+            } else {
+                FavoritesUiState.Success(
+                    tracks = filtered,
+                    totalCount = baseTracks.size,
+                    isCloudBacked = cloudBacked,
+                    isSyncing = isSyncing
+                )
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FavoritesUiState.Loading)
+
     init {
         connectToService()
         viewModelScope.launch {
@@ -182,6 +266,65 @@ class MusicPlayerViewModel(
                 syncTrendingFavoriteFlags(prefs.favoriteIds)
             }
         }
+        startObservingCloudFavorites()
+    }
+
+    private fun startObservingCloudFavorites() {
+        val repo = favoriteTracksRepository ?: return
+        if (!isCloudFavoritesActive()) return
+
+        cloudFavoritesJob?.cancel()
+        cloudFavoritesJob = viewModelScope.launch {
+            _favoritesCloudError.value = null
+            repo.observeFavorites(currentUserId)
+                .catch { error ->
+                    val rootFirestore = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    _favoritesCloudError.value = when (rootFirestore?.code) {
+                        FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                            "دسترسی به لیست علاقه‌مندی‌های ابری مجاز نیست."
+                        FirebaseFirestoreException.Code.UNAVAILABLE ->
+                            "ارتباط با Cloud Firestore برقرار نشد؛ لطفاً اینترنت را بررسی کنید."
+                        else ->
+                            rootFirestore?.localizedMessage
+                                ?: error.localizedMessage
+                                ?: "خطا در همگام‌سازی علاقه‌مندی‌ها با Firestore"
+                    }
+                }
+                .collect { cloudList ->
+                    _favoritesCloudError.value = null
+                    _cloudFavorites.value = cloudList
+
+                    if (!hasCompletedInitialCloudBackfill) {
+                        hasCompletedInitialCloudBackfill = true
+                        if (cloudList.isEmpty()) {
+                            val prefs = preferences.prefsFlow.first()
+                            val localTracks = _allTracks.value.filter { it.id in prefs.favoriteIds }
+                            val localToUpload = (localTracks + prefs.favoriteOnlineTracks)
+                                .distinctBy { it.id }
+                            if (localToUpload.isNotEmpty()) {
+                                _isSyncingFavorites.value = true
+                                repo.syncMissingFavorites(currentUserId, localToUpload)
+                                _isSyncingFavorites.value = false
+                                return@collect
+                            }
+                        }
+                    }
+
+                    val currentLocalIds = preferences.prefsFlow.first().favoriteIds
+                    val cloudIds = cloudList.map { it.id }.toSet()
+                    if (currentLocalIds != cloudIds) {
+                        preferences.setCloudFavoritesSnapshot(cloudList)
+                    }
+                }
+        }
+    }
+
+    fun retryCloudFavorites() {
+        _cloudFavorites.value = null
+        _favoritesCloudError.value = null
+        startObservingCloudFavorites()
     }
 
     fun updateDriveSessionContext(
@@ -391,6 +534,7 @@ class MusicPlayerViewModel(
         return _allTracks.value.firstOrNull { it.id == id }
             ?: _trendingTracks.value.firstOrNull { it.id == id }
             ?: _favoriteOnlineTracks.value.firstOrNull { it.id == id }
+            ?: _cloudFavorites.value?.firstOrNull { it.id == id }
             ?: activeQueueTracks.firstOrNull { it.id == id }
     }
 
@@ -550,6 +694,31 @@ class MusicPlayerViewModel(
         playFromQueue(track, list, controller)
     }
 
+    fun playFavoriteTrack(track: MusicTrack) {
+        val controller = mediaController ?: return
+        val currentFavorites = when (val state = favoritesUiState.value) {
+            is FavoritesUiState.Success -> state.tracks
+            is FavoritesUiState.Error -> state.fallbackTracks
+            FavoritesUiState.Loading -> emptyList()
+        }
+        val list = currentFavorites.ifEmpty { listOf(track) }
+        playFromQueue(track, list, controller)
+    }
+
+    fun playAllFavorites(shuffle: Boolean) {
+        val controller = mediaController ?: return
+        val currentFavorites = when (val state = favoritesUiState.value) {
+            is FavoritesUiState.Success -> state.tracks
+            is FavoritesUiState.Error -> state.fallbackTracks
+            FavoritesUiState.Loading -> emptyList()
+        }
+        if (currentFavorites.isEmpty()) return
+        controller.shuffleModeEnabled = shuffle
+        viewModelScope.launch { preferences.setShuffleEnabled(shuffle) }
+        val startTrack = if (shuffle) currentFavorites.random() else currentFavorites.first()
+        playFromQueue(startTrack, currentFavorites, controller)
+    }
+
     private fun playFromQueue(
         track: MusicTrack,
         queue: List<MusicTrack>,
@@ -650,15 +819,35 @@ class MusicPlayerViewModel(
     }
 
     private fun toggleFavorite(trackId: String, snapshot: MusicTrack?) {
+        val resolvedSnapshot = snapshot ?: findTrackById(trackId)
         viewModelScope.launch {
-            val isFav = preferences.toggleFavorite(trackId, snapshot)
+            val isFav = preferences.toggleFavorite(trackId, resolvedSnapshot)
             _statusMessage.value = if (isFav) "به علاقه‌مندی‌ها اضافه شد" else "از علاقه‌مندی‌ها حذف شد"
+
+            val repo = favoriteTracksRepository
+            if (repo != null && isCloudFavoritesActive()) {
+                _isSyncingFavorites.value = true
+                val cloudResult = if (isFav && resolvedSnapshot != null) {
+                    repo.saveFavorite(currentUserId, resolvedSnapshot.copy(isFavorite = true))
+                } else {
+                    repo.removeFavorite(currentUserId, trackId)
+                }
+                _isSyncingFavorites.value = false
+                cloudResult.onFailure {
+                    _statusMessage.value = "ذخیره محلی انجام شد؛ همگام‌سازی با Firestore خطا داد."
+                }
+            }
+
             scheduleAutoDriveSync()
         }
     }
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
+    }
+
+    fun setFavoritesSearchQuery(query: String) {
+        _favoritesSearchQuery.value = query
     }
 
     fun applyVoiceSearchToLibrary(query: String) {
@@ -794,23 +983,36 @@ class MusicPlayerViewModel(
             result.heardText.isNotBlank() -> result.heardText.trim()
             else -> ""
         }
-        if (targetTab == AppTab.TRENDING) {
-            _activeTab.value = AppTab.TRENDING
-            result.suggestedMoodPreset?.let { _trendingPreset.value = it }
-            _trendingSearchQuery.value = effectiveQuery
-            loadTrendingTracks(forceRefresh = true)
-            if (effectiveQuery.isNotBlank()) {
-                _statusMessage.value = "جستجوی هوشمند ترند: «$effectiveQuery»"
+        when (targetTab) {
+            AppTab.TRENDING -> {
+                _activeTab.value = AppTab.TRENDING
+                result.suggestedMoodPreset?.let { _trendingPreset.value = it }
+                _trendingSearchQuery.value = effectiveQuery
+                loadTrendingTracks(forceRefresh = true)
+                if (effectiveQuery.isNotBlank()) {
+                    _statusMessage.value = "جستجوی هوشمند ترند: «$effectiveQuery»"
+                }
             }
-        } else {
-            _activeTab.value = AppTab.LIBRARY
-            _activeFilter.value = TrackFilter.ALL
-            val matchedTrack = result.matchedTrackIds
-                .firstNotNullOfOrNull { id -> _allTracks.value.firstOrNull { it.id == id } }
-            _searchQuery.value = matchedTrack?.title ?: effectiveQuery
-            val displayQuery = matchedTrack?.title ?: effectiveQuery
-            if (displayQuery.isNotBlank()) {
-                _statusMessage.value = "جستجوی هوشمند: «$displayQuery»"
+            AppTab.FAVORITES -> {
+                _activeTab.value = AppTab.FAVORITES
+                val matchedTrack = result.matchedTrackIds
+                    .firstNotNullOfOrNull { id -> findTrackById(id) }
+                val displayQuery = matchedTrack?.title ?: effectiveQuery
+                _favoritesSearchQuery.value = displayQuery
+                if (displayQuery.isNotBlank()) {
+                    _statusMessage.value = "جستجوی هوشمند علاقه‌مندی‌ها: «$displayQuery»"
+                }
+            }
+            AppTab.LIBRARY -> {
+                _activeTab.value = AppTab.LIBRARY
+                _activeFilter.value = TrackFilter.ALL
+                val matchedTrack = result.matchedTrackIds
+                    .firstNotNullOfOrNull { id -> _allTracks.value.firstOrNull { it.id == id } }
+                val displayQuery = matchedTrack?.title ?: effectiveQuery
+                _searchQuery.value = displayQuery
+                if (displayQuery.isNotBlank()) {
+                    _statusMessage.value = "جستجوی هوشمند: «$displayQuery»"
+                }
             }
         }
         if (closeDialog) {
@@ -875,6 +1077,7 @@ class MusicPlayerViewModel(
         autoDriveSyncJob?.cancel()
         voiceRecordingJob?.cancel()
         aiVoiceJob?.cancel()
+        cloudFavoritesJob?.cancel()
         audioVoiceRecorder.cancelRecording()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null

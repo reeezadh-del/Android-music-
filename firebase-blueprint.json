@@ -128,6 +128,102 @@
         "timestampMs",
         "createdAt"
       ]
+    },
+    "FavoriteTrack": {
+      "title": "FavoriteTrack",
+      "description": "A user's saved favorite music track (device local, imported, or online Iranian trend) persisted in Cloud Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the track owner."
+        },
+        "favoriteId": {
+          "type": "string",
+          "description": "Sanitized Firestore document ID matching the document key."
+        },
+        "trackId": {
+          "type": "string",
+          "description": "Original MusicTrack identifier from local library, imported URI, or trending source."
+        },
+        "title": {
+          "type": "string",
+          "description": "Song title."
+        },
+        "artist": {
+          "type": "string",
+          "description": "Performing artist name."
+        },
+        "album": {
+          "type": "string",
+          "description": "Album or category label."
+        },
+        "durationMs": {
+          "type": "integer",
+          "description": "Track duration in milliseconds."
+        },
+        "mediaUri": {
+          "type": "string",
+          "description": "Playback content URI or MP3 stream URL."
+        },
+        "artworkUri": {
+          "type": "string",
+          "description": "Album art URI or URL."
+        },
+        "importedTrack": {
+          "type": "boolean",
+          "description": "Whether the track was imported via system file picker."
+        },
+        "onlineTrack": {
+          "type": "boolean",
+          "description": "Whether the track streams online."
+        },
+        "remixTrack": {
+          "type": "boolean",
+          "description": "Whether the track is a remix."
+        },
+        "instaTrend": {
+          "type": "boolean",
+          "description": "Whether the track is an Instagram trend."
+        },
+        "fullTrack": {
+          "type": "boolean",
+          "description": "Whether the full audio track is available."
+        },
+        "addedAtMs": {
+          "type": "integer",
+          "description": "Client epoch timestamp in milliseconds when the user favorited the track."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "favoriteId",
+        "trackId",
+        "title",
+        "artist",
+        "album",
+        "durationMs",
+        "mediaUri",
+        "artworkUri",
+        "importedTrack",
+        "onlineTrack",
+        "remixTrack",
+        "instaTrend",
+        "fullTrack",
+        "addedAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -142,6 +238,10 @@
     "/users/{userId}/diagnosticLogs/{logId}": {
       "schema": { "$ref": "#/entities/DiagnosticLog" },
       "description": "Stores immutable crash and error diagnostic reports per user device."
+    },
+    "/users/{userId}/favorites/{favoriteId}": {
+      "schema": { "$ref": "#/entities/FavoriteTrack" },
+      "description": "Stores each authenticated user's persisted favorite music tracks."
     }
   }
 }

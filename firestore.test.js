@@ -172,3 +172,139 @@ test("Authenticated owner can create and list diagnosticLogs; cross-user and upd
   const unauthDb = testEnv.unauthenticatedContext().firestore(DATABASE_ID);
   await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("diagnosticLogs").get());
 });
+
+test("Authenticated owner can create, list, update, and delete favorites; unauthorized or invalid payloads fail", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore(DATABASE_ID);
+  const favCol = aliceDb.collection("users").doc(ALICE_UID).collection("favorites");
+  const favDocRef = favCol.doc("ir_musicsweb_101");
+
+  const validFavorite = {
+    userId: ALICE_UID,
+    favoriteId: "ir_musicsweb_101",
+    trackId: "ir_musicsweb_101",
+    title: "شبای تهران",
+    artist: "علیرضا طلیسچی",
+    album: "ترند اینستا",
+    durationMs: 215000,
+    mediaUri: "https://dl.musicsweb.ir/music/shabaye-tehran-320.mp3",
+    artworkUri: "https://musicsweb.ir/uploads/cover.jpg",
+    importedTrack: false,
+    onlineTrack: true,
+    remixTrack: false,
+    instaTrend: true,
+    fullTrack: true,
+    addedAtMs: 1700000000000,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  // Owner create succeeds
+  await assertSucceeds(favDocRef.set(validFavorite));
+
+  // Owner get & list succeed
+  await assertSucceeds(favDocRef.get());
+  await assertSucceeds(favCol.orderBy("addedAtMs", "desc").get());
+
+  // Owner partial metadata update succeeds while preserving immutable fields
+  await assertSucceeds(
+    favDocRef.update({
+      title: "شبای تهران (ریمیکس)",
+      remixTrack: true,
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Immutable trackId or addedAtMs tamper on update must fail
+  await assertFails(
+    favDocRef.update({
+      trackId: "tampered_id",
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    favDocRef.update({
+      addedAtMs: 1800000000000,
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Shadow/ghost field injection must fail on create and update
+  await assertFails(
+    favCol.doc("ir_musicsweb_102").set({
+      ...validFavorite,
+      favoriteId: "ir_musicsweb_102",
+      isAdmin: true,
+    })
+  );
+  await assertFails(
+    favDocRef.update({
+      ghostField: "hack",
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Mismatched favoriteId / userId must fail
+  await assertFails(
+    favCol.doc("ir_musicsweb_103").set({
+      ...validFavorite,
+      favoriteId: "different_id",
+    })
+  );
+  await assertFails(
+    favCol.doc("ir_musicsweb_104").set({
+      ...validFavorite,
+      favoriteId: "ir_musicsweb_104",
+      userId: BOB_UID,
+    })
+  );
+
+  // Invalid document ID characters must fail
+  await assertFails(
+    favCol.doc("bad.id:with$chars").set({
+      ...validFavorite,
+      favoriteId: "bad.id:with$chars",
+    })
+  );
+
+  // Future client timestamp (spoofing serverTimestamp) must fail
+  await assertFails(
+    favCol.doc("ir_musicsweb_105").set({
+      ...validFavorite,
+      favoriteId: "ir_musicsweb_105",
+      createdAt: new Date(Date.now() + 600_000),
+      updatedAt: new Date(Date.now() + 600_000),
+    })
+  );
+
+  // Oversized title > 300 chars must fail
+  await assertFails(
+    favCol.doc("ir_musicsweb_106").set({
+      ...validFavorite,
+      favoriteId: "ir_musicsweb_106",
+      title: "A".repeat(301),
+    })
+  );
+
+  // Cross-user read/list/write/delete must fail
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore(DATABASE_ID);
+  const bobTargetsAlice = bobDb.collection("users").doc(ALICE_UID).collection("favorites");
+  await assertFails(bobTargetsAlice.doc("ir_musicsweb_101").get());
+  await assertFails(bobTargetsAlice.get());
+  await assertFails(
+    bobTargetsAlice.doc("ir_bob_hack").set({
+      ...validFavorite,
+      userId: BOB_UID,
+      favoriteId: "ir_bob_hack",
+    })
+  );
+  await assertFails(bobTargetsAlice.doc("ir_musicsweb_101").delete());
+
+  // Unauthenticated access must fail
+  const unauthDb = testEnv.unauthenticatedContext().firestore(DATABASE_ID);
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("favorites").get());
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("favorites").doc("ir_musicsweb_101").get());
+
+  // Owner delete succeeds
+  await assertSucceeds(favDocRef.delete());
+});
+

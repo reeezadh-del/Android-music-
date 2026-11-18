@@ -15,7 +15,8 @@ enum class TrackFilter(val labelFa: String) {
 
 enum class AppTab(val labelFa: String) {
     LIBRARY("کتابخانه من"),
-    TRENDING("ترند اینستا")
+    TRENDING("ترند اینستا"),
+    FAVORITES("علاقه‌مندی‌ها")
 }
 
 enum class TrendingCategory(val labelFa: String) {

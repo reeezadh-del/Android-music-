@@ -81,6 +81,41 @@ service cloud.firestore {
              data.createdAt <= request.time;
     }
 
+    function isValidFavoriteTrack(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             isValidId(data.favoriteId) &&
+             data.trackId is string &&
+             data.trackId.size() >= 1 &&
+             data.trackId.size() <= 512 &&
+             data.title is string &&
+             data.title.size() >= 1 &&
+             data.title.size() <= 300 &&
+             data.artist is string &&
+             data.artist.size() >= 1 &&
+             data.artist.size() <= 200 &&
+             data.album is string &&
+             data.album.size() <= 200 &&
+             data.durationMs is int &&
+             data.durationMs >= 0 &&
+             data.mediaUri is string &&
+             data.mediaUri.size() <= 2048 &&
+             data.artworkUri is string &&
+             data.artworkUri.size() <= 2048 &&
+             data.importedTrack is bool &&
+             data.onlineTrack is bool &&
+             data.remixTrack is bool &&
+             data.instaTrend is bool &&
+             data.fullTrack is bool &&
+             data.addedAtMs is int &&
+             data.addedAtMs >= 0 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
     match /usernames/{usernameKey} {
       allow get: if isSignedIn() && isValidUsernameKey(usernameKey);
       allow list: if false;
@@ -147,6 +182,55 @@ service cloud.firestore {
 
         allow update: if false;
         allow delete: if isSignedIn() && isValidId(userId) && isValidId(logId) && request.auth.uid == userId;
+      }
+
+      match /favorites/{favoriteId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(favoriteId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(favoriteId) &&
+                         request.auth.uid == userId &&
+                         isValidFavoriteTrack(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().favoriteId == favoriteId &&
+                         incoming().keys().hasAll([
+                           'userId', 'favoriteId', 'trackId', 'title', 'artist', 'album',
+                           'durationMs', 'mediaUri', 'artworkUri',
+                           'importedTrack', 'onlineTrack', 'remixTrack', 'instaTrend', 'fullTrack',
+                           'addedAtMs', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'favoriteId', 'trackId', 'title', 'artist', 'album',
+                           'durationMs', 'mediaUri', 'artworkUri',
+                           'importedTrack', 'onlineTrack', 'remixTrack', 'instaTrend', 'fullTrack',
+                           'addedAtMs', 'createdAt', 'updatedAt'
+                         ]);
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(favoriteId) &&
+                         request.auth.uid == userId &&
+                         isValidFavoriteTrack(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().favoriteId == existing().favoriteId &&
+                         incoming().trackId == existing().trackId &&
+                         incoming().addedAtMs == existing().addedAtMs &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().keys().hasOnly([
+                           'userId', 'favoriteId', 'trackId', 'title', 'artist', 'album',
+                           'durationMs', 'mediaUri', 'artworkUri',
+                           'importedTrack', 'onlineTrack', 'remixTrack', 'instaTrend', 'fullTrack',
+                           'addedAtMs', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'title', 'artist', 'album', 'durationMs', 'mediaUri', 'artworkUri',
+                           'importedTrack', 'onlineTrack', 'remixTrack', 'instaTrend', 'fullTrack',
+                           'updatedAt'
+                         ]);
+
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(favoriteId) && request.auth.uid == userId;
       }
     }
   }

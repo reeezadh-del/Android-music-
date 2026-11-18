@@ -112,4 +112,19 @@
     <string name="driving_mode_status_auto">متصل به اندروید اتو</string>
     <string name="driving_mode_status_gps">پایش GPS فعال</string>
     <string name="driving_mode_status_paused">نیاز به دسترسی موقعیت</string>
+    <string name="tab_favorites">علاقه‌مندی‌ها</string>
+    <string name="favorites_screen_title">آهنگ‌های مورد علاقه</string>
+    <string name="favorites_cloud_synced">همگام با Cloud Firestore</string>
+    <string name="favorites_cloud_syncing">در حال همگام‌سازی ابری…</string>
+    <string name="favorites_guest_local_badge">ذخیره محلی (حالت مهمان)</string>
+    <string name="favorites_guest_cloud_hint">برای ذخیره دائمی علاقه‌مندی‌ها در فضای ابری Firestore و دسترسی در همه دستگاه‌ها، وارد حساب گوگل شوید.</string>
+    <string name="favorites_search_hint">جستجو در علاقه‌مندی‌ها…</string>
+    <string name="favorites_play_all">پخش همه</string>
+    <string name="favorites_shuffle_all">پخش تصادفی</string>
+    <string name="favorites_retry">تلاش مجدد</string>
+    <string name="favorites_count_format">%1$d آهنگ ذخیره شده</string>
+    <string name="favorites_source_online">آنلاین / ترند اینستا</string>
+    <string name="favorites_source_local">حافظه گوشی</string>
+    <string name="favorites_remove_cd">حذف از علاقه‌مندی‌ها</string>
+    <string name="favorites_voice_search_cd">جستجوی صوتی در علاقه‌مندی‌ها</string>
 </resources>
