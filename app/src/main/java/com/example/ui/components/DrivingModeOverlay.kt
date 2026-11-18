@@ -214,13 +214,15 @@ private fun DrivingModeTopBar(
     onOpenSettings: () -> Unit,
     onClose: () -> Unit
 ) {
-    val isLive = speedState.isAndroidAutoConnected ||
-        (speedState.isActiveForDriving && speedState.hasLocationPermission)
+    val isLive = speedState.isActiveForDriving &&
+        (speedState.isAndroidAutoConnected || speedState.hasLocationPermission)
     val needsPermission = speedState.isEnabled && !speedState.hasLocationPermission
     val statusText = when {
+        !speedState.isEnabled -> stringResource(R.string.driving_mode_status_off)
+        needsPermission -> stringResource(R.string.driving_mode_status_paused)
         speedState.isAndroidAutoConnected -> stringResource(R.string.driving_mode_status_auto)
-        speedState.isActiveForDriving && speedState.hasLocationPermission -> stringResource(R.string.driving_mode_status_gps)
-        else -> stringResource(R.string.driving_mode_status_paused)
+        speedState.onlyWhenAndroidAutoConnected -> stringResource(R.string.driving_mode_status_waiting_auto)
+        else -> stringResource(R.string.driving_mode_status_gps)
     }
 
     Row(

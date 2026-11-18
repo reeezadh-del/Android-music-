@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +27,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -68,7 +71,9 @@ data class AutoSpeedVolumeState(
     val isMonitoringSpeed: Boolean = false,
     val isBackgroundServiceRunning: Boolean = false,
     val currentSpeedKmh: Float = 0f,
-    val appliedVolumeFraction: Float = 1.0f
+    val appliedVolumeFraction: Float = 1.0f,
+    val streamVolumeIndex: Int = 0,
+    val streamVolumeMax: Int = 15
 ) {
     val isActiveForDriving: Boolean
         get() = isEnabled && (!onlyWhenAndroidAutoConnected || isAndroidAutoConnected)
@@ -81,8 +86,8 @@ data class AutoSpeedVolumeState(
 }
 
 object SpeedVolumeCalculator {
-    private const val MIN_COMPUTED_TIME_DELTA_SEC = 0.5f
-    private const val MAX_COMPUTED_TIME_DELTA_SEC = 10.0f
+    private const val MIN_COMPUTED_TIME_DELTA_SEC = 0.4f
+    private const val MAX_COMPUTED_TIME_DELTA_SEC = 30.0f
     private const val MAX_REASONABLE_SPEED_KMH = 240f
     private const val EMA_ALPHA = 0.35f
     private const val VOLUME_STEP_ALPHA = 0.45f
@@ -136,10 +141,11 @@ object SpeedVolumeCalculator {
         if (previousLocation != null && location.time > previousLocation.time) {
             val deltaSeconds = (location.time - previousLocation.time) / 1000f
             if (deltaSeconds in MIN_COMPUTED_TIME_DELTA_SEC..MAX_COMPUTED_TIME_DELTA_SEC) {
-                val accuracyOk = !location.hasAccuracy() || location.accuracy <= 40f
-                if (accuracyOk) {
+                val accuracy = if (location.hasAccuracy()) location.accuracy else 20f
+                if (accuracy <= 80f) {
                     val meters = previousLocation.distanceTo(location)
-                    val kmh = (meters / deltaSeconds) * 3.6f
+                    val effectiveMeters = if (accuracy <= 40f || meters > accuracy * 0.7f) meters else 0f
+                    val kmh = (effectiveMeters / deltaSeconds) * 3.6f
                     return kmh.coerceIn(0f, MAX_REASONABLE_SPEED_KMH)
                 }
             }
@@ -148,25 +154,40 @@ object SpeedVolumeCalculator {
     }
 }
 
+private data class SpeedPrefsConfig(
+    val isEnabled: Boolean,
+    val sensitivity: SpeedVolumeSensitivity,
+    val onlyWhenAndroidAutoConnected: Boolean
+)
+
 class AutoSpeedVolumeManager(
     context: Context,
     private val preferences: MusicPreferences
 ) {
     private val appContext = context.applicationContext
+    private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val _state = MutableStateFlow(
-        AutoSpeedVolumeState(hasLocationPermission = hasLocationPermission(appContext))
+        AutoSpeedVolumeState(
+            hasLocationPermission = hasLocationPermission(appContext),
+            streamVolumeIndex = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0,
+            streamVolumeMax = (audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15).coerceAtLeast(1)
+        )
     )
     val state: StateFlow<AutoSpeedVolumeState> = _state.asStateFlow()
 
     private var attachedPlayer: Player? = null
     private var lastLocation: Location? = null
+    private var lastGpsSpeedTimeMs: Long = 0L
     private var hasSpeedReading = false
     private var isLocationRegistered = false
     private var isConnectionMonitoringStarted = false
     private var isCarProviderConnected = false
     private var isAutoControllerConnected = false
+
+    private var baselineStreamVolume: Int? = null
+    private var lastAppliedStreamIndex: Int? = null
 
     private val carConnectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -177,6 +198,7 @@ class AutoSpeedVolumeManager(
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
+            if (isLocationNoiseFromFallbackProvider(location)) return
             val rawKmh = SpeedVolumeCalculator.extractSpeedKmh(location, lastLocation)
             lastLocation = location
             if (rawKmh != null) {
@@ -194,17 +216,35 @@ class AutoSpeedVolumeManager(
 
     init {
         scope.launch {
-            preferences.prefsFlow.collect { prefs ->
-                _state.update {
-                    it.copy(
+            preferences.prefsFlow
+                .map { prefs ->
+                    SpeedPrefsConfig(
                         isEnabled = prefs.speedVolumeEnabled,
                         sensitivity = prefs.speedVolumeSensitivity,
                         onlyWhenAndroidAutoConnected = prefs.onlyWhenAndroidAutoConnected
                     )
                 }
-                evaluateMonitoringAndVolume()
-            }
+                .distinctUntilChanged()
+                .collect { cfg ->
+                    _state.update {
+                        it.copy(
+                            isEnabled = cfg.isEnabled,
+                            sensitivity = cfg.sensitivity,
+                            onlyWhenAndroidAutoConnected = cfg.onlyWhenAndroidAutoConnected
+                        )
+                    }
+                    evaluateMonitoringAndVolume()
+                }
         }
+    }
+
+    private fun isLocationNoiseFromFallbackProvider(location: Location): Boolean {
+        val now = System.currentTimeMillis()
+        if (location.provider == LocationManager.GPS_PROVIDER || location.hasSpeed()) {
+            lastGpsSpeedTimeMs = now
+            return false
+        }
+        return (now - lastGpsSpeedTimeMs) < 5_000L
     }
 
     fun startMonitoringConnection() {
@@ -248,6 +288,7 @@ class AutoSpeedVolumeManager(
             attachedPlayer = null
         }
         stopLocationUpdates()
+        restoreBaselineVolume()
     }
 
     @androidx.annotation.OptIn(UnstableApi::class)
@@ -273,6 +314,9 @@ class AutoSpeedVolumeManager(
     }
 
     fun onServiceMonitoringChanged(isRunning: Boolean) {
+        if (isRunning) {
+            stopLocationUpdates()
+        }
         _state.update {
             it.copy(
                 isBackgroundServiceRunning = isRunning,
@@ -284,11 +328,19 @@ class AutoSpeedVolumeManager(
     fun onServiceVolumeApplied(speedKmh: Float, volumeFraction: Float) {
         val cleanSpeed = speedKmh.coerceAtLeast(0f)
         val cleanVolume = volumeFraction.coerceIn(0.1f, 1.0f)
-        attachedPlayer?.volume = cleanVolume
+        val current = _state.value
+        if (current.isActiveForDriving && current.hasLocationPermission) {
+            applyVolumeToOutputs(cleanVolume)
+        } else {
+            restoreBaselineVolume()
+        }
+        val (volIdx, volMax) = readCurrentStreamVolumePair()
         _state.update {
             it.copy(
                 currentSpeedKmh = cleanSpeed,
                 appliedVolumeFraction = cleanVolume,
+                streamVolumeIndex = volIdx,
+                streamVolumeMax = volMax,
                 isBackgroundServiceRunning = SpeedVolumeService.isServiceRunning,
                 isMonitoringSpeed = SpeedVolumeService.isServiceRunning || isLocationRegistered
             )
@@ -376,13 +428,16 @@ class AutoSpeedVolumeManager(
             onlyWhenAndroidAutoConnected = current.onlyWhenAndroidAutoConnected
         )
         val nextVolume = SpeedVolumeCalculator.smoothVolumeStep(current.appliedVolumeFraction, targetVolume)
+        applyVolumeToOutputs(nextVolume)
+        val (volIdx, volMax) = readCurrentStreamVolumePair()
         _state.update {
             it.copy(
                 currentSpeedKmh = smoothedSpeed,
-                appliedVolumeFraction = nextVolume
+                appliedVolumeFraction = nextVolume,
+                streamVolumeIndex = volIdx,
+                streamVolumeMax = volMax
             )
         }
-        attachedPlayer?.volume = nextVolume
     }
 
     private fun evaluateMonitoringAndVolume(allowForegroundServiceStart: Boolean = false) {
@@ -408,23 +463,80 @@ class AutoSpeedVolumeManager(
                 isEnabled = current.isEnabled,
                 onlyWhenAndroidAutoConnected = current.onlyWhenAndroidAutoConnected
             )
+            applyVolumeToOutputs(targetVolume)
+            val (volIdx, volMax) = readCurrentStreamVolumePair()
             _state.value = current.copy(
                 isMonitoringSpeed = isLocationRegistered || SpeedVolumeService.isServiceRunning,
                 isBackgroundServiceRunning = SpeedVolumeService.isServiceRunning,
-                appliedVolumeFraction = targetVolume
+                appliedVolumeFraction = targetVolume,
+                streamVolumeIndex = volIdx,
+                streamVolumeMax = volMax
             )
-            attachedPlayer?.volume = targetVolume
         } else {
             stopLocationUpdates()
             SpeedVolumeService.stop(appContext)
+            restoreBaselineVolume()
+            val (volIdx, volMax) = readCurrentStreamVolumePair()
             _state.value = current.copy(
                 isMonitoringSpeed = false,
                 isBackgroundServiceRunning = false,
                 currentSpeedKmh = if (!current.isActiveForDriving) 0f else current.currentSpeedKmh,
-                appliedVolumeFraction = 1.0f
+                appliedVolumeFraction = 1.0f,
+                streamVolumeIndex = volIdx,
+                streamVolumeMax = volMax
             )
-            attachedPlayer?.volume = 1.0f
         }
+    }
+
+    private fun readCurrentStreamVolumePair(): Pair<Int, Int> {
+        val am = audioManager ?: return 0 to 15
+        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val curVol = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, maxVol)
+        return curVol to maxVol
+    }
+
+    private fun applyVolumeToOutputs(volumeFraction: Float) {
+        val cleanFraction = volumeFraction.coerceIn(0.1f, 1.0f)
+        val am = audioManager
+        if (am != null && !am.isVolumeFixed) {
+            val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            if (maxVol > 0) {
+                if (baselineStreamVolume == null) {
+                    baselineStreamVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                }
+                val minAllowed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    am.getStreamMinVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                } else {
+                    1
+                }.coerceAtMost(maxVol)
+                val targetIndex = (cleanFraction * maxVol).roundToInt().coerceIn(minAllowed, maxVol)
+                if (lastAppliedStreamIndex != targetIndex) {
+                    runCatching {
+                        am.setStreamVolume(AudioManager.STREAM_MUSIC, targetIndex, 0)
+                    }
+                    lastAppliedStreamIndex = targetIndex
+                }
+                // Keep ExoPlayer software gain at unity so hardware STREAM_MUSIC controls full phone loudness cleanly.
+                attachedPlayer?.volume = 1.0f
+                return
+            }
+        }
+        // Fallback for fixed-volume car head units / Android Auto sinks where STREAM_MUSIC cannot change.
+        attachedPlayer?.volume = cleanFraction
+    }
+
+    internal fun restoreBaselineVolume() {
+        attachedPlayer?.volume = 1.0f
+        val baseline = baselineStreamVolume
+        val am = audioManager
+        if (baseline != null && am != null && !am.isVolumeFixed) {
+            val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            runCatching {
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, baseline.coerceIn(0, maxVol), 0)
+            }
+        }
+        baselineStreamVolume = null
+        lastAppliedStreamIndex = null
     }
 
     @SuppressLint("MissingPermission")
@@ -433,27 +545,23 @@ class AutoSpeedVolumeManager(
         val locationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             ?: return
 
-        val providers = locationManager.allProviders
-        val chosenProvider = when {
-            LocationManager.GPS_PROVIDER in providers -> LocationManager.GPS_PROVIDER
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                LocationManager.FUSED_PROVIDER in providers -> LocationManager.FUSED_PROVIDER
-            LocationManager.NETWORK_PROVIDER in providers -> LocationManager.NETWORK_PROVIDER
-            else -> null
-        } ?: return
+        val providersToTry = selectBestLocationProviders(locationManager)
+        if (providersToTry.isEmpty()) return
 
-        runCatching {
-            locationManager.requestLocationUpdates(
-                chosenProvider,
-                LOCATION_MIN_TIME_MS,
-                LOCATION_MIN_DISTANCE_M,
-                locationListener,
-                Looper.getMainLooper()
-            )
-            isLocationRegistered = true
-        }.onFailure {
-            isLocationRegistered = false
+        var registeredAny = false
+        for (provider in providersToTry) {
+            runCatching {
+                locationManager.requestLocationUpdates(
+                    provider,
+                    LOCATION_MIN_TIME_MS,
+                    LOCATION_MIN_DISTANCE_M,
+                    locationListener,
+                    Looper.getMainLooper()
+                )
+                registeredAny = true
+            }
         }
+        isLocationRegistered = registeredAny
     }
 
     private fun stopLocationUpdates() {
@@ -476,7 +584,38 @@ class AutoSpeedVolumeManager(
         private const val CONNECTION_TYPE_PROJECTION = 2
         private const val ANDROID_AUTO_PACKAGE = "com.google.android.projection.gearhead"
         private const val LOCATION_MIN_TIME_MS = 1_000L
-        private const val LOCATION_MIN_DISTANCE_M = 1.0f
+        private const val LOCATION_MIN_DISTANCE_M = 0.0f
+
+        internal fun selectBestLocationProviders(locationManager: LocationManager): List<String> {
+            val all = locationManager.allProviders
+            val candidates = buildList {
+                if (LocationManager.GPS_PROVIDER in all &&
+                    runCatching { locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
+                ) {
+                    add(LocationManager.GPS_PROVIDER)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    LocationManager.FUSED_PROVIDER in all &&
+                    runCatching { locationManager.isProviderEnabled(LocationManager.FUSED_PROVIDER) }.getOrDefault(false)
+                ) {
+                    add(LocationManager.FUSED_PROVIDER)
+                }
+                if (isEmpty() && LocationManager.NETWORK_PROVIDER in all &&
+                    runCatching { locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)
+                ) {
+                    add(LocationManager.NETWORK_PROVIDER)
+                }
+                if (isEmpty()) {
+                    when {
+                        LocationManager.GPS_PROVIDER in all -> add(LocationManager.GPS_PROVIDER)
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                            LocationManager.FUSED_PROVIDER in all -> add(LocationManager.FUSED_PROVIDER)
+                        LocationManager.NETWORK_PROVIDER in all -> add(LocationManager.NETWORK_PROVIDER)
+                    }
+                }
+            }
+            return candidates.distinct()
+        }
 
         fun hasLocationPermission(context: Context): Boolean {
             val fineGranted = ContextCompat.checkSelfPermission(

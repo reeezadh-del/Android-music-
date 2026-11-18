@@ -281,9 +281,12 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `auto speed volume manager boosts volume with speed while connected and resets on disconnect`() = runTest {
+    fun `auto speed volume manager boosts STREAM_MUSIC with speed while connected and resets baseline on disconnect`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val app = context.applicationContext as android.app.Application
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 10, 0)
+
         org.robolectric.Shadows.shadowOf(app).grantPermissions(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
@@ -306,28 +309,40 @@ class ExampleRobolectricTest {
 
         manager.onSpeedSampleForTest(0f)
         val lowSpeedVol = manager.state.value.appliedVolumeFraction
+        val lowStreamVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
 
         manager.onSpeedSampleForTest(65f)
         manager.onSpeedSampleForTest(85f)
         manager.onSpeedSampleForTest(105f)
         val highSpeedVol = manager.state.value.appliedVolumeFraction
+        val highStreamVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
 
         assertTrue(manager.state.value.isAndroidAutoConnected)
         assertTrue(manager.state.value.hasLocationPermission)
         assertTrue("Expected highSpeedVol ($highSpeedVol) > lowSpeedVol ($lowSpeedVol)", highSpeedVol > lowSpeedVol)
+        assertTrue("Expected STREAM_MUSIC at high speed ($highStreamVol) > low speed ($lowStreamVol)", highStreamVol > lowStreamVol)
 
-        // Disconnecting from Android Auto must immediately restore full volume (1.0f) when Android-Auto-only is enabled
+        // Slowing back down to stationary must reduce STREAM_MUSIC smoothly as well.
+        repeat(8) { manager.onSpeedSampleForTest(0f) }
+        val slowedStreamVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+        assertTrue("Expected STREAM_MUSIC after slowing down ($slowedStreamVol) < high speed ($highStreamVol)", slowedStreamVol < highStreamVol)
+
+        // Disconnecting from Android Auto must restore the user's baseline STREAM_MUSIC (10)
         manager.setCarConnectionOverrideForTest(false)
         assertFalse(manager.state.value.isAndroidAutoConnected)
         assertEquals(1.0f, manager.state.value.appliedVolumeFraction, 0.0001f)
         assertEquals(0f, manager.state.value.currentSpeedKmh, 0.0001f)
+        assertEquals(10, audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
     }
 
     @Test
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    fun `speed volume background service uses LocationManager and MediaSession to boost volume on speed increase`() = runTest {
+    fun `speed volume background service uses LocationManager and MediaSession to boost phone STREAM_MUSIC on speed increase`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val app = context.applicationContext as AvaMusicApplication
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 9, 0)
+
         org.robolectric.Shadows.shadowOf(app).grantPermissions(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
@@ -377,6 +392,7 @@ class ExampleRobolectricTest {
             }
             service.handleLocationSample(stationaryLoc)
             val lowVolume = service.currentComputedVolume()
+            val lowStreamVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
 
             val fastLoc1 = android.location.Location(android.location.LocationManager.GPS_PROVIDER).apply {
                 latitude = 35.6910
@@ -395,9 +411,12 @@ class ExampleRobolectricTest {
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
 
             val highVolume = service.currentComputedVolume()
+            val highStreamVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
             assertTrue("Expected smoothed speed > 50 km/h, was ${service.currentComputedSpeed()}", service.currentComputedSpeed() > 50f)
             assertTrue("Expected highVolume ($highVolume) > lowVolume ($lowVolume)", highVolume > lowVolume)
+            assertTrue("Expected STREAM_MUSIC at high speed ($highStreamVol) > low speed ($lowStreamVol)", highStreamVol > lowStreamVol)
             assertEquals(highVolume, app.autoSpeedVolumeManager.state.value.appliedVolumeFraction, 0.001f)
+            assertEquals(highStreamVol, app.autoSpeedVolumeManager.state.value.streamVolumeIndex)
         } finally {
             speedController.destroy()
             playbackController.destroy()
@@ -405,5 +424,6 @@ class ExampleRobolectricTest {
         }
 
         assertFalse(com.example.player.SpeedVolumeService.isServiceRunning)
+        assertEquals(9, audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
     }
 }

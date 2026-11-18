@@ -293,7 +293,7 @@ fun AutoSpeedVolumeDialog(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Text(
-                                    text = "${state.appliedVolumePercent}%",
+                                    text = "${state.appliedVolumePercent}% (${state.streamVolumeIndex}/${state.streamVolumeMax})",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontFamily = OutfitFontFamily,
                                     fontWeight = FontWeight.Bold,

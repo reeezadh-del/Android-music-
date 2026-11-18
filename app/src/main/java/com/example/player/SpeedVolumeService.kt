@@ -39,7 +39,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+private data class SpeedServicePrefsConfig(
+    val isEnabled: Boolean,
+    val sensitivity: SpeedVolumeSensitivity,
+    val onlyWhenAndroidAutoConnected: Boolean
+)
 
 /**
  * Background foreground-eligible service that monitors vehicle speed via [LocationManager]
@@ -65,6 +73,7 @@ class SpeedVolumeService : Service() {
     private var onlyWhenAndroidAutoConnected = false
     private var isAndroidAutoConnected = false
     private var sensitivity = SpeedVolumeSensitivity.BALANCED
+    private var lastGpsSpeedTimeMs: Long = 0L
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
@@ -121,10 +130,9 @@ class SpeedVolumeService : Service() {
     override fun onDestroy() {
         isServiceRunning = false
         stopLocationUpdates()
-        dispatchVolumeCommandToSession(speedKmh = 0f, volumeFraction = 1.0f)
-        (application as? AvaMusicApplication)?.autoSpeedVolumeManager?.onServiceMonitoringChanged(
-            isRunning = false
-        )
+        val manager = (application as? AvaMusicApplication)?.autoSpeedVolumeManager
+        manager?.restoreBaselineVolume()
+        manager?.onServiceMonitoringChanged(isRunning = false)
         mediaControllerFuture?.let { MediaController.releaseFuture(it) }
         mediaControllerFuture = null
         mediaController = null
@@ -134,11 +142,21 @@ class SpeedVolumeService : Service() {
 
     @VisibleForTesting
     internal fun handleLocationSample(location: Location) {
+        if (isLocationNoiseFromFallbackProvider(location)) return
         val rawKmh = SpeedVolumeCalculator.extractSpeedKmh(location, lastLocation)
         lastLocation = location
         if (rawKmh != null) {
             handleSpeedSampleKmh(rawKmh)
         }
+    }
+
+    private fun isLocationNoiseFromFallbackProvider(location: Location): Boolean {
+        val now = System.currentTimeMillis()
+        if (location.provider == LocationManager.GPS_PROVIDER || location.hasSpeed()) {
+            lastGpsSpeedTimeMs = now
+            return false
+        }
+        return (now - lastGpsSpeedTimeMs) < 5_000L
     }
 
     @VisibleForTesting
@@ -179,18 +197,30 @@ class SpeedVolumeService : Service() {
     private fun observePreferencesAndAutoState() {
         val app = application as? AvaMusicApplication ?: return
         serviceScope.launch {
-            app.preferences.prefsFlow.collectLatest { prefs ->
-                isEnabled = prefs.speedVolumeEnabled
-                sensitivity = prefs.speedVolumeSensitivity
-                onlyWhenAndroidAutoConnected = prefs.onlyWhenAndroidAutoConnected
-                reconcileActiveMonitoringState()
-            }
+            app.preferences.prefsFlow
+                .map { prefs ->
+                    SpeedServicePrefsConfig(
+                        isEnabled = prefs.speedVolumeEnabled,
+                        sensitivity = prefs.speedVolumeSensitivity,
+                        onlyWhenAndroidAutoConnected = prefs.onlyWhenAndroidAutoConnected
+                    )
+                }
+                .distinctUntilChanged()
+                .collectLatest { prefs ->
+                    isEnabled = prefs.isEnabled
+                    sensitivity = prefs.sensitivity
+                    onlyWhenAndroidAutoConnected = prefs.onlyWhenAndroidAutoConnected
+                    reconcileActiveMonitoringState()
+                }
         }
         serviceScope.launch {
-            app.autoSpeedVolumeManager.state.collectLatest { state ->
-                isAndroidAutoConnected = state.isAndroidAutoConnected
-                reconcileActiveMonitoringState()
-            }
+            app.autoSpeedVolumeManager.state
+                .map { it.isAndroidAutoConnected }
+                .distinctUntilChanged()
+                .collectLatest { connected ->
+                    isAndroidAutoConnected = connected
+                    reconcileActiveMonitoringState()
+                }
         }
     }
 
@@ -271,30 +301,34 @@ class SpeedVolumeService : Service() {
             ?.also { locationManager = it }
             ?: return
 
-        val providers = manager.allProviders
-        val chosenProvider = when {
-            LocationManager.GPS_PROVIDER in providers -> LocationManager.GPS_PROVIDER
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                LocationManager.FUSED_PROVIDER in providers -> LocationManager.FUSED_PROVIDER
-            LocationManager.NETWORK_PROVIDER in providers -> LocationManager.NETWORK_PROVIDER
-            else -> null
-        } ?: return
+        val providersToTry = AutoSpeedVolumeManager.selectBestLocationProviders(manager)
+        if (providersToTry.isEmpty()) return
 
-        runCatching {
-            manager.requestLocationUpdates(
-                chosenProvider,
-                LOCATION_MIN_TIME_MS,
-                LOCATION_MIN_DISTANCE_M,
-                locationListener,
-                Looper.getMainLooper()
-            )
+        var registeredAny = false
+        var lastError: Throwable? = null
+        for (provider in providersToTry) {
+            runCatching {
+                manager.requestLocationUpdates(
+                    provider,
+                    LOCATION_MIN_TIME_MS,
+                    LOCATION_MIN_DISTANCE_M,
+                    locationListener,
+                    Looper.getMainLooper()
+                )
+                registeredAny = true
+            }.onFailure { err ->
+                lastError = err
+            }
+        }
+
+        if (registeredAny) {
             isLocationRegistered = true
             (application as? AvaMusicApplication)?.autoSpeedVolumeManager?.onServiceMonitoringChanged(
                 isRunning = true
             )
-        }.onFailure { err ->
+        } else {
             isLocationRegistered = false
-            CrashReporter.recordNonFatal("SPEED_LOCATION_REGISTER", err, context = this)
+            lastError?.let { CrashReporter.recordNonFatal("SPEED_LOCATION_REGISTER", it, context = this) }
         }
     }
 
@@ -309,7 +343,11 @@ class SpeedVolumeService : Service() {
 
     private fun stopMonitoringAndSelf() {
         stopLocationUpdates()
-        applyTargetVolume(speedKmh = 0f, volumeFraction = 1.0f)
+        currentSpeedKmh = 0f
+        currentVolumeFraction = 1.0f
+        val manager = (application as? AvaMusicApplication)?.autoSpeedVolumeManager
+        manager?.restoreBaselineVolume()
+        manager?.onServiceMonitoringChanged(isRunning = false)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -383,7 +421,7 @@ class SpeedVolumeService : Service() {
         private const val CHANNEL_ID = "ava_speed_volume_channel"
         private const val NOTIFICATION_ID = 4207
         private const val LOCATION_MIN_TIME_MS = 1_000L
-        private const val LOCATION_MIN_DISTANCE_M = 1.0f
+        private const val LOCATION_MIN_DISTANCE_M = 0.0f
 
         @Volatile
         var isServiceRunning: Boolean = false

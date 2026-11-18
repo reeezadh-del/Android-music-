@@ -61,10 +61,21 @@ class MusicPlaybackService : MediaLibraryService() {
 
         player = exoPlayer
         mediaLibrarySession = buildMediaLibrarySessionSafely(exoPlayer, activityIntent)
-        (application as? AvaMusicApplication)?.autoSpeedVolumeManager?.apply {
+        val speedManager = (application as? AvaMusicApplication)?.autoSpeedVolumeManager
+        speedManager?.apply {
             attachPlayer(exoPlayer)
             startMonitoringConnection()
         }
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    val current = speedManager?.state?.value ?: return
+                    if (current.isActiveForDriving && current.hasLocationPermission) {
+                        speedManager.syncBackgroundServiceFromForeground()
+                    }
+                }
+            }
+        })
     }
 
     private fun buildMediaLibrarySessionSafely(
@@ -215,10 +226,12 @@ class MusicPlaybackService : MediaLibraryService() {
             if (customCommand.customAction == ACTION_SET_SPEED_VOLUME) {
                 val volumeFraction = args.getFloat(EXTRA_VOLUME_FRACTION, 1.0f).coerceIn(0.1f, 1.0f)
                 val speedKmh = args.getFloat(EXTRA_SPEED_KMH, 0f).coerceAtLeast(0f)
-                player?.volume = volumeFraction
-                (application as? AvaMusicApplication)
-                    ?.autoSpeedVolumeManager
-                    ?.onServiceVolumeApplied(speedKmh, volumeFraction)
+                val speedManager = (application as? AvaMusicApplication)?.autoSpeedVolumeManager
+                if (speedManager != null) {
+                    speedManager.onServiceVolumeApplied(speedKmh, volumeFraction)
+                } else {
+                    player?.volume = volumeFraction
+                }
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
             return super.onCustomCommand(session, controller, customCommand, args)

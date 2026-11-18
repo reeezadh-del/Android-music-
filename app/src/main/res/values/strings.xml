@@ -112,6 +112,8 @@
     <string name="driving_mode_status_auto">متصل به اندروید اتو</string>
     <string name="driving_mode_status_gps">پایش GPS فعال</string>
     <string name="driving_mode_status_paused">نیاز به دسترسی موقعیت</string>
+    <string name="driving_mode_status_off">تنظیم خودکار خاموش</string>
+    <string name="driving_mode_status_waiting_auto">در انتظار اتصال اندروید اتو</string>
     <string name="tab_favorites">علاقه‌مندی‌ها</string>
     <string name="favorites_screen_title">آهنگ‌های مورد علاقه</string>
     <string name="favorites_cloud_synced">همگام با Cloud Firestore</string>
