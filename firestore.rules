@@ -29,6 +29,14 @@ service cloud.firestore {
       return name is string && name.size() >= 1 && name.size() <= 4 && name.matches('^[a-zA-Z0-9_]+$');
     }
 
+    function isValidAuthorLabel(label) {
+      return label is string && label.size() >= 1 && label.size() <= 32;
+    }
+
+    function isValidReactionEmoji(emoji) {
+      return emoji in ['FIRE', 'LOVE', 'VIBE', 'CLAP', 'SAD'];
+    }
+
     function isValidUsernameClaim(data) {
       return data.userId is string &&
              data.userId.size() >= 1 &&
@@ -110,6 +118,41 @@ service cloud.firestore {
              data.fullTrack is bool &&
              data.addedAtMs is int &&
              data.addedAtMs >= 0 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidTrackReaction(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             isValidId(data.trackKey) &&
+             data.trackTitle is string &&
+             data.trackTitle.size() >= 1 &&
+             data.trackTitle.size() <= 300 &&
+             isValidReactionEmoji(data.emojiType) &&
+             isValidAuthorLabel(data.authorUsername) &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidTrackComment(data) {
+      return isValidId(data.commentId) &&
+             isValidId(data.trackKey) &&
+             data.trackTitle is string &&
+             data.trackTitle.size() >= 1 &&
+             data.trackTitle.size() <= 300 &&
+             data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             isValidAuthorLabel(data.authorUsername) &&
+             data.text is string &&
+             data.text.size() >= 1 &&
+             data.text.size() <= 500 &&
              data.createdAt is timestamp &&
              data.createdAt <= request.time &&
              data.updatedAt is timestamp &&
@@ -231,6 +274,94 @@ service cloud.firestore {
                          ]);
 
         allow delete: if isSignedIn() && isValidId(userId) && isValidId(favoriteId) && request.auth.uid == userId;
+      }
+    }
+
+    match /tracks/{trackKey} {
+      allow read, write: if false;
+
+      match /reactions/{userId} {
+        allow get, list: if isSignedIn() && isValidId(trackKey);
+
+        allow create: if isSignedIn() &&
+                         isValidId(trackKey) &&
+                         isValidId(userId) &&
+                         request.auth.uid == userId &&
+                         isValidTrackReaction(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().trackKey == trackKey &&
+                         incoming().keys().hasAll([
+                           'userId', 'trackKey', 'trackTitle', 'emojiType',
+                           'authorUsername', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'trackKey', 'trackTitle', 'emojiType',
+                           'authorUsername', 'createdAt', 'updatedAt'
+                         ]);
+
+        allow update: if isSignedIn() &&
+                         isValidId(trackKey) &&
+                         isValidId(userId) &&
+                         request.auth.uid == userId &&
+                         isValidTrackReaction(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().trackKey == existing().trackKey &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().keys().hasOnly([
+                           'userId', 'trackKey', 'trackTitle', 'emojiType',
+                           'authorUsername', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'emojiType', 'authorUsername', 'trackTitle', 'updatedAt'
+                         ]);
+
+        allow delete: if isSignedIn() &&
+                         isValidId(trackKey) &&
+                         isValidId(userId) &&
+                         request.auth.uid == userId;
+      }
+
+      match /comments/{commentId} {
+        allow get, list: if isSignedIn() && isValidId(trackKey);
+
+        allow create: if isSignedIn() &&
+                         isValidId(trackKey) &&
+                         isValidId(commentId) &&
+                         isValidTrackComment(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().trackKey == trackKey &&
+                         incoming().commentId == commentId &&
+                         incoming().keys().hasAll([
+                           'commentId', 'trackKey', 'trackTitle', 'userId',
+                           'authorUsername', 'text', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'commentId', 'trackKey', 'trackTitle', 'userId',
+                           'authorUsername', 'text', 'createdAt', 'updatedAt'
+                         ]);
+
+        allow update: if isSignedIn() &&
+                         isValidId(trackKey) &&
+                         isValidId(commentId) &&
+                         existing().userId == request.auth.uid &&
+                         isValidTrackComment(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().commentId == existing().commentId &&
+                         incoming().trackKey == existing().trackKey &&
+                         incoming().authorUsername == existing().authorUsername &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().keys().hasOnly([
+                           'commentId', 'trackKey', 'trackTitle', 'userId',
+                           'authorUsername', 'text', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'text', 'updatedAt'
+                         ]);
+
+        allow delete: if isSignedIn() &&
+                         isValidId(trackKey) &&
+                         isValidId(commentId) &&
+                         existing().userId == request.auth.uid;
       }
     }
   }

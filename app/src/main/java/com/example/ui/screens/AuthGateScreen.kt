@@ -58,7 +58,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -98,6 +101,8 @@ fun AuthGateScreen(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
+    val primaryGlow = MaterialTheme.colorScheme.primary
+    val tertiaryGlow = MaterialTheme.colorScheme.tertiary
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -107,15 +112,22 @@ fun AuthGateScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.14f),
-                            MaterialTheme.colorScheme.background
+                .drawBehind {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(primaryGlow.copy(alpha = 0.16f), Color.Transparent),
+                            center = Offset(size.width * 0.5f, size.height * 0.24f),
+                            radius = size.maxDimension * 0.52f
                         )
                     )
-                )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(tertiaryGlow.copy(alpha = 0.10f), Color.Transparent),
+                            center = Offset(size.width * 0.18f, size.height * 0.80f),
+                            radius = size.maxDimension * 0.40f
+                        )
+                    )
+                }
                 .padding(innerPadding)
                 .imePadding()
                 .padding(horizontal = 24.dp),
@@ -145,12 +157,12 @@ fun AuthGateScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                // Animated App Logo & Name
+                // Animated App Logo, Name & Studio Tagline
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     AnimatedAuthLogo()
 
@@ -161,64 +173,111 @@ fun AuthGateScreen(
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onBackground
                     )
-                }
 
-                if (!isSignedInWithGoogle) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    Text(
+                        text = "استودیوی موسیقی هوشمند • آنلاین و آفلاین",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Button(
-                            onClick = onGoogleSignInClick,
-                            enabled = !isBusy,
-                            shape = RoundedCornerShape(18.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(54.dp)
-                                .testTag("google_sign_in_button")
-                        ) {
-                            if (isBusy) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
+                        listOf("جستجوی صوتی AI", "ترند اینستا", "حالت رانندگی").forEach { badge ->
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
+                                modifier = Modifier.border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+                                    RoundedCornerShape(10.dp)
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(statusLabel ?: "در حال اتصال…")
-                            } else {
-                                Icon(Icons.AutoMirrored.Rounded.Login, contentDescription = null)
-                                Spacer(modifier = Modifier.width(10.dp))
+                            ) {
                                 Text(
-                                    text = stringResource(R.string.auth_google_sign_in),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
+                                    text = badge,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                 )
                             }
                         }
-
-                        OutlinedButton(
-                            onClick = onGuestSignInClick,
-                            shape = RoundedCornerShape(18.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
-                                .testTag("guest_sign_in_button")
-                        ) {
-                            Icon(Icons.Rounded.PersonOutline, contentDescription = null)
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = stringResource(R.string.auth_guest_sign_in),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
                     }
-                } else {
-                    // Step 2: Unique <=4 char username creation after Google Sign-In
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(26.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                    tonalElevation = 4.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(26.dp)
+                        )
+                ) {
                     Column(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        if (!isSignedInWithGoogle) {
+                            Button(
+                                onClick = onGoogleSignInClick,
+                                enabled = !isBusy,
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(54.dp)
+                                    .testTag("google_sign_in_button")
+                            ) {
+                                if (isBusy) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(statusLabel ?: "در حال اتصال…")
+                                } else {
+                                    Icon(Icons.AutoMirrored.Rounded.Login, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = stringResource(R.string.auth_google_sign_in),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = onGuestSignInClick,
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                                    .testTag("guest_sign_in_button")
+                            ) {
+                                Icon(Icons.Rounded.PersonOutline, contentDescription = null)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = stringResource(R.string.auth_guest_sign_in),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        } else {
+                            // Step 2: Unique <=4 char username creation after Google Sign-In
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
                         if (!userEmail.isNullOrBlank()) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -373,10 +432,12 @@ fun AuthGateScreen(
                                     text = stringResource(R.string.auth_register_submit),
                                     fontWeight = FontWeight.Bold
                                 )
+                                }
                             }
                         }
                     }
                 }
+            }
 
                 AnimatedVisibility(visible = !errorMessage.isNullOrBlank()) {
                     Surface(

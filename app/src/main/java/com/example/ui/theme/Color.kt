@@ -2,23 +2,24 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Obsidian Vinyl Studio Palette
-val ObsidianBg = Color(0xFF0B0B11)
-val ObsidianSurface = Color(0xFF14141F)
-val ObsidianSurfaceHigh = Color(0xFF1D1D2C)
-val ObsidianSurfaceElevated = Color(0xFF252538)
-val ObsidianBorder = Color(0xFF2E2E44)
+// Midnight Vinyl Lounge Palette
+val ObsidianBg = Color(0xFF080910)
+val ObsidianSurface = Color(0xFF121420)
+val ObsidianSurfaceHigh = Color(0xFF1A1D2E)
+val ObsidianSurfaceElevated = Color(0xFF23273D)
+val ObsidianSurfaceHighest = Color(0xFF2C314B)
+val ObsidianBorder = Color(0xFF333856)
 
-val CoralPrimary = Color(0xFFFF6B47)
-val CoralContainer = Color(0xFF4D1A0E)
-val AmberSecondary = Color(0xFFFFB84D)
-val AmberContainer = Color(0xFF442C07)
-val AutoTurquoise = Color(0xFF3CE0D0)
-val AutoTurquoiseContainer = Color(0xFF0A3A36)
+val CoralPrimary = Color(0xFFFF6347)
+val CoralContainer = Color(0xFF521A10)
+val AmberSecondary = Color(0xFFFFBC58)
+val AmberContainer = Color(0xFF472E08)
+val AutoTurquoise = Color(0xFF2CE5D0)
+val AutoTurquoiseContainer = Color(0xFF0A3E39)
 
-val TextPrimaryDark = Color(0xFFF5F4FA)
-val TextSecondaryDark = Color(0xFFA9A7BC)
-val TextMutedDark = Color(0xFF73718A)
+val TextPrimaryDark = Color(0xFFF7F7FC)
+val TextSecondaryDark = Color(0xFFAFAEC4)
+val TextMutedDark = Color(0xFF767894)
 
 // Light fallback palette (warm ivory vinyl studio)
 val IvoryBg = Color(0xFFFBF9F5)

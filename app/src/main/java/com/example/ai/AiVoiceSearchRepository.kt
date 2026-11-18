@@ -139,7 +139,7 @@ class AiVoiceSearchRepository {
         return buildString {
             appendLine("You are the voice music search assistant for an Iranian music player app called Ava Music.")
             appendLine("Listen carefully to the user's voice audio (Persian and/or English speech, sung lyrics, or music mood description).")
-            appendLine("Active tab: ${if (targetTab == AppTab.TRENDING) "Trending Iranian Instagram songs & remixes" else "User local music library"}.")
+            appendLine("Active tab: ${if (targetTab == AppTab.ONLINE) "Online Iranian music & Instagram trends" else "User local music library"}.")
             appendLine("Tasks:")
             appendLine("1. Transcribe or summarize what the user said/sang into 'heardText' (in Persian if spoken in Persian).")
             appendLine("2. Extract the cleanest, most effective 'searchQuery' (song name, singer name, or 1-4 search keywords) without filler phrases like 'پخش کن' or 'پیدا کن'.")

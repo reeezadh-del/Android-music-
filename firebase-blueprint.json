@@ -224,6 +224,104 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "TrackReaction": {
+      "title": "TrackReaction",
+      "description": "A single authenticated user's emoji reaction on a track, keyed by the user's UID to prevent duplicates.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the reacting user."
+        },
+        "trackKey": {
+          "type": "string",
+          "description": "Sanitized Firestore track identifier matching the parent trackKey segment."
+        },
+        "trackTitle": {
+          "type": "string",
+          "description": "Track title at reaction time."
+        },
+        "emojiType": {
+          "type": "string",
+          "enum": ["FIRE", "LOVE", "VIBE", "CLAP", "SAD"],
+          "description": "Reaction emoji type."
+        },
+        "authorUsername": {
+          "type": "string",
+          "description": "Username or display label of the reacting user."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "trackKey",
+        "trackTitle",
+        "emojiType",
+        "authorUsername",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TrackComment": {
+      "title": "TrackComment",
+      "description": "An authenticated user's comment posted on a music track.",
+      "type": "object",
+      "properties": {
+        "commentId": {
+          "type": "string",
+          "description": "Unique identifier matching the comment document ID."
+        },
+        "trackKey": {
+          "type": "string",
+          "description": "Sanitized Firestore track identifier matching the parent trackKey segment."
+        },
+        "trackTitle": {
+          "type": "string",
+          "description": "Track title at comment creation time."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the comment author."
+        },
+        "authorUsername": {
+          "type": "string",
+          "description": "Username or display label of the comment author."
+        },
+        "text": {
+          "type": "string",
+          "description": "Comment body text (1 to 500 characters)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "commentId",
+        "trackKey",
+        "trackTitle",
+        "userId",
+        "authorUsername",
+        "text",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -242,6 +340,14 @@
     "/users/{userId}/favorites/{favoriteId}": {
       "schema": { "$ref": "#/entities/FavoriteTrack" },
       "description": "Stores each authenticated user's persisted favorite music tracks."
+    },
+    "/tracks/{trackKey}/reactions/{userId}": {
+      "schema": { "$ref": "#/entities/TrackReaction" },
+      "description": "Stores each authenticated user's reaction on a track."
+    },
+    "/tracks/{trackKey}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/TrackComment" },
+      "description": "Stores user comments on a track."
     }
   }
 }

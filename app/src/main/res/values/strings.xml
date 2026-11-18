@@ -129,4 +129,20 @@
     <string name="favorites_source_local">حافظه گوشی</string>
     <string name="favorites_remove_cd">حذف از علاقه‌مندی‌ها</string>
     <string name="favorites_voice_search_cd">جستجوی صوتی در علاقه‌مندی‌ها</string>
+    <string name="tab_online">آنلاین</string>
+    <string name="online_title">موسیقی آنلاین</string>
+    <string name="online_subtitle">ترندهای اینستا، تازه‌های موزیک ایران، ری‌اکت و نظرات</string>
+    <string name="online_discover_search_hint">جستجو در آهنگ‌های آنلاین ایران…</string>
+    <string name="online_discover_loading">در حال دریافت تازه‌ترین آهنگ‌های آنلاین…</string>
+    <string name="online_discover_empty_title">آهنگ آنلاینی پیدا نشد</string>
+    <string name="online_discover_empty_subtitle">اتصال اینترنت را بررسی کنید یا سبک و عبارت جستجو را تغییر دهید.</string>
+    <string name="social_reactions_title">واکنش شنوندگان</string>
+    <string name="social_comments_title">نظرات و گفتگو</string>
+    <string name="social_comment_hint">نظر خود را درباره این آهنگ بنویسید…</string>
+    <string name="social_comment_send">ارسال نظر</string>
+    <string name="social_comment_delete">حذف نظر</string>
+    <string name="social_comments_empty">هنوز نظری ثبت نشده است؛ اولین نفر باشید!</string>
+    <string name="social_guest_notice">برای ثبت ری‌اکت و ارسال نظر، لطفاً با حساب گوگل خود وارد شوید.</string>
+    <string name="social_guest_signin_cta">ورود با گوگل برای ری‌اکت و نظر</string>
+    <string name="social_open_comments">نظرات</string>
 </resources>

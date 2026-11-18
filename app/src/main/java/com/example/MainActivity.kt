@@ -22,6 +22,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,33 +42,35 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AlternateEmail
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PersonOutline
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -85,6 +88,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -113,19 +120,24 @@ import com.example.player.FavoriteTracksRepository
 import com.example.player.RepeatModeOption
 import com.example.player.StoredMusicPrefs
 import com.example.player.TrackFilter
+import com.example.player.TrackReactionSummary
+import com.example.player.TrackSocialRepository
 import com.example.player.VoiceSearchHelper
 import com.example.ui.components.AccountDriveDialog
 import com.example.ui.components.AiVoiceSearchDialog
 import com.example.ui.components.AutoSpeedVolumeDialog
+import com.example.ui.components.AvaSearchField
 import com.example.ui.components.CrashReportDialog
 import com.example.ui.components.DiagnosticsHistoryDialog
 import com.example.ui.components.DrivingModeOverlay
 import com.example.ui.components.FullNowPlayingSheet
 import com.example.ui.components.MiniPlayerBar
+import com.example.ui.components.StudioHeroBanner
 import com.example.ui.components.TrackRowItem
+import com.example.ui.components.TrackSocialBottomSheet
 import com.example.ui.screens.AuthGateScreen
 import com.example.ui.screens.FavoritesScreen
-import com.example.ui.screens.TrendingIranianScreen
+import com.example.ui.screens.OnlineMusicScreen
 import com.example.ui.theme.AvaPlayerTheme
 import com.example.ui.viewmodel.MusicPlayerViewModel
 import com.google.firebase.Firebase
@@ -211,7 +223,8 @@ fun AvaAuthRoot() {
                                 driveDbManager = application.driveDbManager,
                                 currentUserId = "guest",
                                 autoSpeedVolumeManager = application.autoSpeedVolumeManager,
-                                favoriteTracksRepository = null
+                                favoriteTracksRepository = null,
+                                trackSocialRepository = null
                             )
                         }
                     }
@@ -697,7 +710,8 @@ fun AvaAuthRoot() {
                                     driveDbManager = application.driveDbManager,
                                     currentUserId = user.uid,
                                     autoSpeedVolumeManager = application.autoSpeedVolumeManager,
-                                    favoriteTracksRepository = FavoriteTracksRepository(application)
+                                    favoriteTracksRepository = FavoriteTracksRepository(application),
+                                    trackSocialRepository = TrackSocialRepository(application)
                                 )
                             }
                         }
@@ -826,12 +840,27 @@ fun SimpleMusicPlayerScreen(
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
     val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
 
+    val onlineSubSection by viewModel.onlineSubSection.collectAsStateWithLifecycle()
     val trendingTracks by viewModel.trendingTracks.collectAsStateWithLifecycle()
     val trendingCategory by viewModel.trendingCategory.collectAsStateWithLifecycle()
     val trendingPreset by viewModel.trendingPreset.collectAsStateWithLifecycle()
     val trendingSearchQuery by viewModel.trendingSearchQuery.collectAsStateWithLifecycle()
     val isLoadingTrending by viewModel.isLoadingTrending.collectAsStateWithLifecycle()
     val trendingError by viewModel.trendingError.collectAsStateWithLifecycle()
+
+    val discoverTracks by viewModel.discoverTracks.collectAsStateWithLifecycle()
+    val discoverStyle by viewModel.discoverStyle.collectAsStateWithLifecycle()
+    val discoverSearchQuery by viewModel.discoverSearchQuery.collectAsStateWithLifecycle()
+    val isLoadingDiscover by viewModel.isLoadingDiscover.collectAsStateWithLifecycle()
+    val discoverError by viewModel.discoverError.collectAsStateWithLifecycle()
+
+    val trackSocialSummaries by viewModel.trackSocialSummaries.collectAsStateWithLifecycle()
+    val activeSocialTrack by viewModel.activeSocialTrack.collectAsStateWithLifecycle()
+    val activeTrackSummary by viewModel.activeTrackSummary.collectAsStateWithLifecycle()
+    val activeTrackComments by viewModel.activeTrackComments.collectAsStateWithLifecycle()
+    val isLoadingComments by viewModel.isLoadingComments.collectAsStateWithLifecycle()
+    val isSubmittingComment by viewModel.isSubmittingComment.collectAsStateWithLifecycle()
+    val commentsError by viewModel.commentsError.collectAsStateWithLifecycle()
 
     val isSyncingDrive by viewModel.isSyncingDrive.collectAsStateWithLifecycle()
     val driveSyncMessage by viewModel.driveSyncMessage.collectAsStateWithLifecycle()
@@ -926,7 +955,7 @@ fun SimpleMusicPlayerScreen(
     )
 
     val launchSystemSpeechForAi: () -> Unit = {
-        val prompt = if (voiceSearchTargetTab == AppTab.TRENDING) {
+        val prompt = if (voiceSearchTargetTab == AppTab.ONLINE) {
             context.getString(R.string.voice_search_prompt_trending)
         } else {
             context.getString(R.string.voice_search_prompt_library)
@@ -1011,6 +1040,9 @@ fun SimpleMusicPlayerScreen(
         (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
+    val primaryGlow = MaterialTheme.colorScheme.primary
+    val tertiaryGlow = MaterialTheme.colorScheme.tertiary
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -1029,12 +1061,25 @@ fun SimpleMusicPlayerScreen(
                             applyNavigationBarPadding = false
                         )
                     }
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                    )
                     NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        tonalElevation = 0.dp
                     ) {
+                        val navItemColors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         NavigationBarItem(
                             selected = activeTab == AppTab.LIBRARY,
                             onClick = { viewModel.selectTab(AppTab.LIBRARY) },
+                            colors = navItemColors,
                             icon = {
                                 Icon(
                                     imageVector = Icons.Rounded.LibraryMusic,
@@ -1047,9 +1092,14 @@ fun SimpleMusicPlayerScreen(
                         NavigationBarItem(
                             selected = activeTab == AppTab.FAVORITES,
                             onClick = { viewModel.selectTab(AppTab.FAVORITES) },
+                            colors = navItemColors,
                             icon = {
                                 Icon(
-                                    imageVector = Icons.Rounded.Favorite,
+                                    imageVector = if (activeTab == AppTab.FAVORITES) {
+                                        Icons.Rounded.Favorite
+                                    } else {
+                                        Icons.Rounded.FavoriteBorder
+                                    },
                                     contentDescription = stringResource(R.string.tab_favorites)
                                 )
                             },
@@ -1057,16 +1107,17 @@ fun SimpleMusicPlayerScreen(
                             modifier = Modifier.testTag("nav_tab_favorites")
                         )
                         NavigationBarItem(
-                            selected = activeTab == AppTab.TRENDING,
-                            onClick = { viewModel.selectTab(AppTab.TRENDING) },
+                            selected = activeTab == AppTab.ONLINE,
+                            onClick = { viewModel.selectTab(AppTab.ONLINE) },
+                            colors = navItemColors,
                             icon = {
                                 Icon(
-                                    imageVector = Icons.Rounded.Whatshot,
-                                    contentDescription = stringResource(R.string.tab_trending)
+                                    imageVector = Icons.Rounded.Public,
+                                    contentDescription = stringResource(R.string.tab_online)
                                 )
                             },
-                            label = { Text(stringResource(R.string.tab_trending)) },
-                            modifier = Modifier.testTag("nav_tab_trending")
+                            label = { Text(stringResource(R.string.tab_online)) },
+                            modifier = Modifier.testTag("nav_tab_online")
                         )
                     }
                 }
@@ -1075,6 +1126,22 @@ fun SimpleMusicPlayerScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(primaryGlow.copy(alpha = 0.11f), Color.Transparent),
+                                center = Offset(size.width * 0.85f, size.height * 0.08f),
+                                radius = size.maxDimension * 0.48f
+                            )
+                        )
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(tertiaryGlow.copy(alpha = 0.08f), Color.Transparent),
+                                center = Offset(size.width * 0.12f, size.height * 0.55f),
+                                radius = size.maxDimension * 0.42f
+                            )
+                        )
+                    }
                     .padding(innerPadding),
                 contentAlignment = Alignment.TopCenter
             ) {
@@ -1089,182 +1156,184 @@ fun SimpleMusicPlayerScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                // Header with unique @username + Drive status pill
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                // Studio Hero Banner Header with @username + Quick Library Actions
+                                StudioHeroBanner(
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    accentColor = MaterialTheme.colorScheme.primary
                                 ) {
                                     Row(
-                                        modifier = Modifier.weight(1f),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(MaterialTheme.colorScheme.primaryContainer),
-                                            contentAlignment = Alignment.Center
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.MusicNote,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = stringResource(R.string.music_player_title),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = "${allTracks.size} آهنگ",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    }
-
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Surface(
-                                            onClick = { isAccountDialogOpen = true },
-                                            shape = RoundedCornerShape(14.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                            modifier = Modifier
-                                                .height(40.dp)
-                                                .testTag("account_profile_button")
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 10.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(44.dp)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(
+                                                        Brush.linearGradient(
+                                                            listOf(
+                                                                MaterialTheme.colorScheme.primary,
+                                                                MaterialTheme.colorScheme.secondary
+                                                            )
+                                                        )
+                                                    ),
+                                                contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
-                                                    imageVector = if (isGuestMode) {
-                                                        Icons.Rounded.PersonOutline
-                                                    } else {
-                                                        Icons.Rounded.AlternateEmail
-                                                    },
-                                                    contentDescription = "حساب کاربری",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(16.dp)
+                                                    imageVector = Icons.Rounded.MusicNote,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                            }
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = stringResource(R.string.music_player_title),
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                                 Text(
-                                                    text = userAccount.username,
-                                                    style = MaterialTheme.typography.labelLarge,
-                                                    fontWeight = FontWeight.Bold
+                                                    text = "${allTracks.size} آهنگ در کتابخانه",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
-                                                if (!isGuestMode) {
-                                                    if (isSyncingDrive) {
+                                            }
+                                        }
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Surface(
+                                                onClick = { isAccountDialogOpen = true },
+                                                shape = RoundedCornerShape(14.dp),
+                                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.88f),
+                                                modifier = Modifier
+                                                    .height(40.dp)
+                                                    .border(
+                                                        1.dp,
+                                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                                                        RoundedCornerShape(14.dp)
+                                                    )
+                                                    .testTag("account_profile_button")
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (isGuestMode) {
+                                                            Icons.Rounded.PersonOutline
+                                                        } else {
+                                                            Icons.Rounded.AlternateEmail
+                                                        },
+                                                        contentDescription = "حساب کاربری",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Text(
+                                                        text = userAccount.username,
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    if (!isGuestMode) {
+                                                        if (isSyncingDrive) {
+                                                            CircularProgressIndicator(
+                                                                modifier = Modifier.size(14.dp),
+                                                                strokeWidth = 2.dp
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                imageVector = if (isDriveAuthorized) {
+                                                                    Icons.Rounded.CloudDone
+                                                                } else {
+                                                                    Icons.Rounded.CloudOff
+                                                                },
+                                                                contentDescription = null,
+                                                                tint = if (isDriveAuthorized) {
+                                                                    MaterialTheme.colorScheme.tertiary
+                                                                } else {
+                                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                                },
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
+                                                modifier = Modifier.size(48.dp)
+                                            ) {
+                                                IconButton(
+                                                    onClick = triggerScan,
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .testTag("scan_music_button")
+                                                ) {
+                                                    if (isScanning) {
                                                         CircularProgressIndicator(
-                                                            modifier = Modifier.size(14.dp),
+                                                            modifier = Modifier.size(18.dp),
                                                             strokeWidth = 2.dp
                                                         )
                                                     } else {
                                                         Icon(
-                                                            imageVector = if (isDriveAuthorized) {
-                                                                Icons.Rounded.CloudDone
-                                                            } else {
-                                                                Icons.Rounded.CloudOff
-                                                            },
-                                                            contentDescription = null,
-                                                            tint = if (isDriveAuthorized) {
-                                                                MaterialTheme.colorScheme.tertiary
-                                                            } else {
-                                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                                            },
-                                                            modifier = Modifier.size(16.dp)
+                                                            imageVector = Icons.Rounded.Refresh,
+                                                            contentDescription = stringResource(R.string.action_scan_music),
+                                                            modifier = Modifier.size(20.dp)
                                                         )
                                                     }
                                                 }
                                             }
-                                        }
-
-                                        IconButton(
-                                            onClick = triggerScan,
-                                            modifier = Modifier
-                                                .size(48.dp)
-                                                .testTag("scan_music_button")
-                                        ) {
-                                            if (isScanning) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(20.dp),
-                                                    strokeWidth = 2.dp
-                                                )
-                                            } else {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Refresh,
-                                                    contentDescription = stringResource(R.string.action_scan_music)
-                                                )
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
+                                                modifier = Modifier.size(48.dp)
+                                            ) {
+                                                IconButton(
+                                                    onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .testTag("add_audio_button")
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Add,
+                                                        contentDescription = stringResource(R.string.action_add_files),
+                                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
                                             }
-                                        }
-                                        IconButton(
-                                            onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
-                                            modifier = Modifier
-                                                .size(48.dp)
-                                                .testTag("add_audio_button")
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Add,
-                                                contentDescription = stringResource(R.string.action_add_files)
-                                            )
                                         }
                                     }
                                 }
 
-                                // Search Bar
-                                OutlinedTextField(
+                                // Sleek Pill Search Bar
+                                AvaSearchField(
                                     value = searchQuery,
                                     onValueChange = viewModel::setSearchQuery,
-                                    placeholder = { Text(stringResource(R.string.search_hint)) },
-                                    leadingIcon = {
-                                        Icon(Icons.Rounded.Search, contentDescription = null)
-                                    },
-                                    trailingIcon = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (searchQuery.isNotEmpty()) {
-                                                IconButton(
-                                                    onClick = { viewModel.setSearchQuery("") },
-                                                    modifier = Modifier.size(48.dp)
-                                                ) {
-                                                    Icon(Icons.Rounded.Close, contentDescription = "پاک کردن")
-                                                }
-                                            }
-                                            IconButton(
-                                                onClick = { launchVoiceSearch(AppTab.LIBRARY) },
-                                                modifier = Modifier
-                                                    .size(48.dp)
-                                                    .testTag("voice_search_library_button")
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Mic,
-                                                    contentDescription = stringResource(R.string.voice_search_cd),
-                                                    tint = MaterialTheme.colorScheme.primary
-                                                )
-                                            }
-                                        }
-                                    },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("search_music_input")
+                                    placeholderText = stringResource(R.string.search_hint),
+                                    voiceContentDescription = stringResource(R.string.voice_search_cd),
+                                    onVoiceSearchClick = { launchVoiceSearch(AppTab.LIBRARY) },
+                                    inputTestTag = "search_music_input",
+                                    voiceTestTag = "voice_search_library_button"
                                 )
 
-                                // Filter Chips + Android Auto Speed Volume Trigger
+                                // Styled Filter Chips + Android Auto Speed Volume Trigger
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1273,8 +1342,9 @@ fun SimpleMusicPlayerScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     TrackFilter.entries.forEach { filter ->
+                                        val selected = activeFilter == filter
                                         FilterChip(
-                                            selected = activeFilter == filter,
+                                            selected = selected,
                                             onClick = { viewModel.setFilter(filter) },
                                             label = { Text(filter.labelFa) },
                                             leadingIcon = {
@@ -1288,6 +1358,13 @@ fun SimpleMusicPlayerScreen(
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                             },
+                                            shape = RoundedCornerShape(14.dp),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                                            ),
                                             modifier = Modifier.testTag("filter_${filter.name}")
                                         )
                                     }
@@ -1306,6 +1383,13 @@ fun SimpleMusicPlayerScreen(
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         },
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
+                                        ),
                                         modifier = Modifier.testTag("driving_mode_button")
                                     )
 
@@ -1324,6 +1408,13 @@ fun SimpleMusicPlayerScreen(
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         },
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
+                                        ),
                                         modifier = Modifier.testTag("auto_speed_volume_button")
                                     )
                                 }
@@ -1337,27 +1428,40 @@ fun SimpleMusicPlayerScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Surface(
-                                            shape = RoundedCornerShape(24.dp),
+                                            shape = RoundedCornerShape(26.dp),
                                             color = MaterialTheme.colorScheme.surfaceContainerLow,
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(vertical = 16.dp)
+                                                .border(
+                                                    1.dp,
+                                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                                                    RoundedCornerShape(26.dp)
+                                                )
                                         ) {
                                             Column(
                                                 modifier = Modifier.padding(24.dp),
                                                 horizontalAlignment = Alignment.CenterHorizontally,
                                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
-                                                Icon(
-                                                    imageVector = if (activeFilter == TrackFilter.FAVORITES) {
-                                                        Icons.Rounded.Favorite
-                                                    } else {
-                                                        Icons.Rounded.MusicNote
-                                                    },
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(48.dp)
-                                                )
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(64.dp)
+                                                        .clip(RoundedCornerShape(20.dp))
+                                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (activeFilter == TrackFilter.FAVORITES) {
+                                                            Icons.Rounded.Favorite
+                                                        } else {
+                                                            Icons.Rounded.MusicNote
+                                                        },
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(34.dp)
+                                                    )
+                                                }
                                                 Text(
                                                     text = if (activeFilter == TrackFilter.FAVORITES) {
                                                         stringResource(R.string.empty_favorites_title)
@@ -1450,25 +1554,41 @@ fun SimpleMusicPlayerScreen(
                             )
                         }
 
-                        AppTab.TRENDING -> {
-                            TrendingIranianScreen(
-                                tracks = trendingTracks,
+                        AppTab.ONLINE -> {
+                            OnlineMusicScreen(
+                                subSection = onlineSubSection,
+                                onSelectSubSection = viewModel::selectOnlineSubSection,
+                                trendingTracks = trendingTracks,
                                 selectedCategory = trendingCategory,
                                 selectedPreset = trendingPreset,
-                                searchQuery = trendingSearchQuery,
-                                isLoading = isLoadingTrending,
-                                errorMessage = trendingError,
+                                trendingSearchQuery = trendingSearchQuery,
+                                isLoadingTrending = isLoadingTrending,
+                                trendingError = trendingError,
+                                onSelectTrendingCategory = viewModel::setTrendingCategory,
+                                onSelectTrendingPreset = viewModel::setTrendingPreset,
+                                onTrendingSearchQueryChange = viewModel::setTrendingSearchQuery,
+                                onSubmitTrendingSearch = viewModel::submitTrendingSearch,
+                                onClearTrendingSearch = viewModel::clearTrendingSearch,
+                                onRefreshTrending = { viewModel.loadTrendingTracks(forceRefresh = true) },
+                                onPlayTrendingTrack = viewModel::playTrendingTrack,
+                                discoverTracks = discoverTracks,
+                                selectedDiscoverStyle = discoverStyle,
+                                discoverSearchQuery = discoverSearchQuery,
+                                isLoadingDiscover = isLoadingDiscover,
+                                discoverError = discoverError,
+                                onSelectDiscoverStyle = viewModel::setDiscoverStyle,
+                                onDiscoverSearchQueryChange = viewModel::setDiscoverSearchQuery,
+                                onSubmitDiscoverSearch = viewModel::submitDiscoverSearch,
+                                onClearDiscoverSearch = viewModel::clearDiscoverSearch,
+                                onRefreshDiscover = { viewModel.loadDiscoverTracks(forceRefresh = true) },
+                                onPlayDiscoverTrack = viewModel::playDiscoverTrack,
                                 currentTrackId = activeTrack?.id,
                                 isPlaying = playerState.isPlaying,
-                                onSelectCategory = viewModel::setTrendingCategory,
-                                onSelectPreset = viewModel::setTrendingPreset,
-                                onSearchQueryChange = viewModel::setTrendingSearchQuery,
-                                onSubmitSearch = viewModel::submitTrendingSearch,
-                                onClearSearch = viewModel::clearTrendingSearch,
-                                onVoiceSearchClick = { launchVoiceSearch(AppTab.TRENDING) },
-                                onRefresh = { viewModel.loadTrendingTracks(forceRefresh = true) },
-                                onPlayTrack = viewModel::playTrendingTrack,
-                                onToggleFavorite = viewModel::toggleFavorite
+                                socialSummaries = trackSocialSummaries,
+                                onVoiceSearchClick = { launchVoiceSearch(AppTab.ONLINE) },
+                                onToggleFavorite = viewModel::toggleFavorite,
+                                onToggleReaction = viewModel::toggleTrackReaction,
+                                onOpenComments = viewModel::openTrackSocialSheet
                             )
                         }
                     }
@@ -1493,7 +1613,7 @@ fun SimpleMusicPlayerScreen(
                 viewModel.applyAiSearchResult(res, AppTab.LIBRARY, closeDialog = true)
             },
             onApplyToTrending = { res ->
-                viewModel.applyAiSearchResult(res, AppTab.TRENDING, closeDialog = true)
+                viewModel.applyAiSearchResult(res, AppTab.ONLINE, closeDialog = true)
             },
             onDismiss = viewModel::dismissAiVoiceSearch
         )
@@ -1582,6 +1702,13 @@ fun SimpleMusicPlayerScreen(
                     onOpenDrivingMode = {
                         viewModel.syncSpeedVolumeBackgroundService()
                         isDrivingModeOpen = true
+                    },
+                    socialSummary = trackSocialSummaries[activeTrack.id] ?: TrackReactionSummary(),
+                    onToggleReaction = { reaction ->
+                        viewModel.toggleTrackReaction(activeTrack, reaction)
+                    },
+                    onOpenComments = {
+                        viewModel.openTrackSocialSheet(activeTrack)
                     }
                 )
             }
@@ -1615,6 +1742,33 @@ fun SimpleMusicPlayerScreen(
                     isAutoSpeedDialogOpen = true
                 },
                 onClose = { isDrivingModeOpen = false }
+            )
+        }
+
+        val socialTrack = activeSocialTrack
+        if (socialTrack != null) {
+            TrackSocialBottomSheet(
+                track = socialTrack,
+                summary = activeTrackSummary,
+                comments = activeTrackComments,
+                isLoadingComments = isLoadingComments,
+                isSubmittingComment = isSubmittingComment,
+                commentsError = commentsError,
+                isGuestMode = isGuestMode,
+                onToggleReaction = { reaction ->
+                    viewModel.toggleTrackReaction(socialTrack, reaction)
+                },
+                onSubmitComment = { commentText ->
+                    viewModel.submitTrackComment(socialTrack, commentText)
+                },
+                onDeleteComment = { commentId ->
+                    viewModel.deleteTrackComment(socialTrack, commentId)
+                },
+                onUpgradeToGoogle = {
+                    viewModel.closeTrackSocialSheet()
+                    onUpgradeToGoogle()
+                },
+                onDismiss = viewModel::closeTrackSocialSheet
             )
         }
     }

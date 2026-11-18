@@ -15,8 +15,21 @@ enum class TrackFilter(val labelFa: String) {
 
 enum class AppTab(val labelFa: String) {
     LIBRARY("کتابخانه من"),
-    TRENDING("ترند اینستا"),
+    ONLINE("آنلاین"),
     FAVORITES("علاقه‌مندی‌ها")
+}
+
+enum class OnlineSubSection(val labelFa: String) {
+    TRENDING("ترند اینستا"),
+    DISCOVER("تازه‌های آنلاین")
+}
+
+enum class OnlineDiscoverStyle(val labelFa: String, val searchKeywords: List<String>) {
+    NEW_HITS("جدیدترین‌ها", listOf("آهنگ جدید", "دانلود آهنگ جدید")),
+    POP("پاپ ایرانی", listOf("آهنگ پاپ جدید", "پاپ ایرانی")),
+    HAPPY_DANCE("شاد و ریتمیک", listOf("آهنگ شاد جدید", "آهنگ رقصی")),
+    CHILL_EMOTIONAL("احساسی و آرام", listOf("آهنگ غمگین جدید", "آهنگ احساسی")),
+    PERSIAN_RAP("رپ و هیپ‌هاپ", listOf("آهنگ رپ فارسی", "هیپ هاپ"))
 }
 
 enum class TrendingCategory(val labelFa: String) {
@@ -32,6 +45,41 @@ enum class TrendingPreset(val labelFa: String) {
     SAD_SLOW("اسلو و دپ اینستا"),
     RAP_GANG("رپ و گنگ اینستا")
 }
+
+enum class TrackReactionType(val emoji: String, val labelFa: String) {
+    FIRE("🔥", "آتیش"),
+    LOVE("❤️", "عشق"),
+    VIBE("😍", "خفن"),
+    CLAP("👏", "عالی"),
+    SAD("😢", "احساسی");
+
+    companion object {
+        fun fromRawOrNull(raw: String?): TrackReactionType? {
+            if (raw.isNullOrBlank()) return null
+            return entries.firstOrNull { it.name == raw.trim().uppercase() }
+        }
+    }
+}
+
+data class TrackReactionSummary(
+    val trackKey: String = "",
+    val counts: Map<TrackReactionType, Int> = emptyMap(),
+    val userReaction: TrackReactionType? = null,
+    val commentCount: Int = 0
+) {
+    val totalReactions: Int
+        get() = counts.values.sum()
+}
+
+data class TrackCommentUi(
+    val commentId: String,
+    val trackKey: String,
+    val userId: String,
+    val authorUsername: String,
+    val text: String,
+    val createdAtMs: Long,
+    val isOwnComment: Boolean
+)
 
 @Serializable
 data class MusicTrack(

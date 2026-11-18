@@ -267,7 +267,11 @@ class ExampleUnitTest {
     @Test
     fun `favorite tracks repository sanitizes document ids and roundtrips track metadata`() {
         assertEquals(3, com.example.player.AppTab.entries.size)
+        assertTrue(com.example.player.AppTab.entries.contains(com.example.player.AppTab.ONLINE))
         assertTrue(com.example.player.AppTab.entries.contains(com.example.player.AppTab.FAVORITES))
+        assertEquals(2, com.example.player.OnlineSubSection.entries.size)
+        assertTrue(com.example.player.OnlineSubSection.entries.contains(com.example.player.OnlineSubSection.TRENDING))
+        assertTrue(com.example.player.OnlineSubSection.entries.contains(com.example.player.OnlineSubSection.DISCOVER))
 
         assertEquals(
             "ir_musicsweb_101",
@@ -345,6 +349,107 @@ class ExampleUnitTest {
         assertTrue(roundTripped.isOnline)
         assertTrue(roundTripped.isRemix)
         assertTrue(roundTripped.isInstaTrend)
+    }
+
+    @Test
+    fun `track social repository aggregates reactions and builds rules-compliant payloads without id`() {
+        val track = MusicTrack(
+            id = "ir_musicsweb_555",
+            title = "شبای تهران",
+            artist = "علیرضا طلیسچی",
+            album = "ترند اینستا",
+            durationMs = 200_000L,
+            mediaUri = "https://dl.example.com/music/555.mp3",
+            artworkUri = "",
+            isOnline = true
+        )
+        val trackKey = com.example.player.TrackSocialRepository.toTrackKey(track)
+        assertEquals("ir_musicsweb_555", trackKey)
+
+        val reactions = listOf(
+            com.example.player.FirestoreTrackReaction(
+                id = "uid_alice",
+                userId = "uid_alice",
+                trackKey = trackKey,
+                trackTitle = track.title,
+                emojiType = "FIRE",
+                authorUsername = "Ali1"
+            ),
+            com.example.player.FirestoreTrackReaction(
+                id = "uid_bob",
+                userId = "uid_bob",
+                trackKey = trackKey,
+                trackTitle = track.title,
+                emojiType = "FIRE",
+                authorUsername = "Bob2"
+            ),
+            com.example.player.FirestoreTrackReaction(
+                id = "uid_sara",
+                userId = "uid_sara",
+                trackKey = trackKey,
+                trackTitle = track.title,
+                emojiType = "LOVE",
+                authorUsername = "Sara"
+            )
+        )
+        val summary = com.example.player.TrackSocialRepository.aggregateReactions(
+            trackKey = trackKey,
+            reactions = reactions,
+            currentUid = "uid_alice",
+            commentCount = 4
+        )
+        assertEquals(2, summary.counts[com.example.player.TrackReactionType.FIRE])
+        assertEquals(1, summary.counts[com.example.player.TrackReactionType.LOVE])
+        assertEquals(3, summary.totalReactions)
+        assertEquals(com.example.player.TrackReactionType.FIRE, summary.userReaction)
+        assertEquals(4, summary.commentCount)
+
+        val reactCreate = com.example.player.TrackSocialRepository.buildReactionCreatePayload(
+            userId = "uid_alice",
+            trackKey = trackKey,
+            trackTitle = track.title,
+            reaction = com.example.player.TrackReactionType.VIBE,
+            authorUsername = "Ali1"
+        )
+        assertFalse(reactCreate.containsKey("id"))
+        assertEquals("uid_alice", reactCreate["userId"])
+        assertEquals(trackKey, reactCreate["trackKey"])
+        assertEquals("VIBE", reactCreate["emojiType"])
+        assertTrue(reactCreate.containsKey("createdAt"))
+        assertTrue(reactCreate.containsKey("updatedAt"))
+
+        val reactUpdate = com.example.player.TrackSocialRepository.buildReactionUpdatePayload(
+            reaction = com.example.player.TrackReactionType.CLAP,
+            trackTitle = track.title,
+            authorUsername = "Ali1"
+        )
+        assertFalse(reactUpdate.containsKey("id"))
+        assertFalse(reactUpdate.containsKey("userId"))
+        assertEquals("CLAP", reactUpdate["emojiType"])
+        assertTrue(reactUpdate.containsKey("updatedAt"))
+
+        val commentCreate = com.example.player.TrackSocialRepository.buildCommentCreatePayload(
+            commentId = "cmt_abc123",
+            trackKey = trackKey,
+            trackTitle = track.title,
+            userId = "uid_alice",
+            authorUsername = "Ali1",
+            text = "  خیلی آهنگ خفنی بود!  "
+        )
+        assertFalse(commentCreate.containsKey("id"))
+        assertEquals("cmt_abc123", commentCreate["commentId"])
+        assertEquals(trackKey, commentCreate["trackKey"])
+        assertEquals("uid_alice", commentCreate["userId"])
+        assertEquals("Ali1", commentCreate["authorUsername"])
+        assertEquals("خیلی آهنگ خفنی بود!", commentCreate["text"])
+        assertTrue(commentCreate.containsKey("createdAt"))
+        assertTrue(commentCreate.containsKey("updatedAt"))
+
+        assertEquals(null, com.example.player.TrackSocialRepository.sanitizeCommentText("   "))
+        assertEquals(
+            com.example.player.TrackSocialRepository.MAX_COMMENT_LENGTH,
+            com.example.player.TrackSocialRepository.sanitizeCommentText("آ".repeat(700))?.length
+        )
     }
 }
 

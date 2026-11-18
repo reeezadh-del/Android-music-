@@ -26,9 +26,15 @@ import com.example.player.MusicLibraryRepository
 import com.example.player.MusicPlaybackService
 import com.example.player.MusicPreferences
 import com.example.player.MusicTrack
+import com.example.player.OnlineDiscoverStyle
+import com.example.player.OnlineSubSection
 import com.example.player.RepeatModeOption
 import com.example.player.SpeedVolumeSensitivity
+import com.example.player.TrackCommentUi
 import com.example.player.TrackFilter
+import com.example.player.TrackReactionSummary
+import com.example.player.TrackReactionType
+import com.example.player.TrackSocialRepository
 import com.example.player.TrendingCategory
 import com.example.player.TrendingPreset
 import com.example.player.TrendingIranianRepository
@@ -95,17 +101,22 @@ class MusicPlayerViewModel(
     private val driveDbManager: GoogleDriveDatabaseManager,
     val currentUserId: String,
     private val autoSpeedVolumeManager: AutoSpeedVolumeManager? = null,
-    private val favoriteTracksRepository: FavoriteTracksRepository? = null
+    private val favoriteTracksRepository: FavoriteTracksRepository? = null,
+    private val trackSocialRepository: TrackSocialRepository? = null
 ) : ViewModel() {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
     private var progressJob: Job? = null
     private var trendingLoadJob: Job? = null
+    private var discoverLoadJob: Job? = null
     private var autoDriveSyncJob: Job? = null
     private var voiceRecordingJob: Job? = null
     private var aiVoiceJob: Job? = null
     private var cloudFavoritesJob: Job? = null
+    private var socialSummariesJob: Job? = null
+    private var activeReactionsJob: Job? = null
+    private var activeCommentsJob: Job? = null
 
     private val aiVoiceSearchRepository by lazy { AiVoiceSearchRepository() }
     private val audioVoiceRecorder by lazy { AudioVoiceRecorder(appContext) }
@@ -134,7 +145,10 @@ class MusicPlayerViewModel(
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
-    // Trending Iranian discovery states
+    // Online hub states (Trending + Discover)
+    private val _onlineSubSection = MutableStateFlow(OnlineSubSection.TRENDING)
+    val onlineSubSection: StateFlow<OnlineSubSection> = _onlineSubSection.asStateFlow()
+
     private val _trendingTracks = MutableStateFlow<List<MusicTrack>>(emptyList())
     val trendingTracks: StateFlow<List<MusicTrack>> = _trendingTracks.asStateFlow()
 
@@ -153,6 +167,43 @@ class MusicPlayerViewModel(
     private val _trendingError = MutableStateFlow<String?>(null)
     val trendingError: StateFlow<String?> = _trendingError.asStateFlow()
 
+    private val _discoverTracks = MutableStateFlow<List<MusicTrack>>(emptyList())
+    val discoverTracks: StateFlow<List<MusicTrack>> = _discoverTracks.asStateFlow()
+
+    private val _discoverStyle = MutableStateFlow(OnlineDiscoverStyle.NEW_HITS)
+    val discoverStyle: StateFlow<OnlineDiscoverStyle> = _discoverStyle.asStateFlow()
+
+    private val _discoverSearchQuery = MutableStateFlow("")
+    val discoverSearchQuery: StateFlow<String> = _discoverSearchQuery.asStateFlow()
+
+    private val _isLoadingDiscover = MutableStateFlow(false)
+    val isLoadingDiscover: StateFlow<Boolean> = _isLoadingDiscover.asStateFlow()
+
+    private val _discoverError = MutableStateFlow<String?>(null)
+    val discoverError: StateFlow<String?> = _discoverError.asStateFlow()
+
+    // Social reactions & comments states
+    private val _trackSocialSummaries = MutableStateFlow<Map<String, TrackReactionSummary>>(emptyMap())
+    val trackSocialSummaries: StateFlow<Map<String, TrackReactionSummary>> = _trackSocialSummaries.asStateFlow()
+
+    private val _activeSocialTrack = MutableStateFlow<MusicTrack?>(null)
+    val activeSocialTrack: StateFlow<MusicTrack?> = _activeSocialTrack.asStateFlow()
+
+    private val _activeTrackSummary = MutableStateFlow(TrackReactionSummary())
+    val activeTrackSummary: StateFlow<TrackReactionSummary> = _activeTrackSummary.asStateFlow()
+
+    private val _activeTrackComments = MutableStateFlow<List<TrackCommentUi>>(emptyList())
+    val activeTrackComments: StateFlow<List<TrackCommentUi>> = _activeTrackComments.asStateFlow()
+
+    private val _isLoadingComments = MutableStateFlow(false)
+    val isLoadingComments: StateFlow<Boolean> = _isLoadingComments.asStateFlow()
+
+    private val _isSubmittingComment = MutableStateFlow(false)
+    val isSubmittingComment: StateFlow<Boolean> = _isSubmittingComment.asStateFlow()
+
+    private val _commentsError = MutableStateFlow<String?>(null)
+    val commentsError: StateFlow<String?> = _commentsError.asStateFlow()
+
     private val _isSyncingDrive = MutableStateFlow(false)
     val isSyncingDrive: StateFlow<Boolean> = _isSyncingDrive.asStateFlow()
 
@@ -160,6 +211,7 @@ class MusicPlayerViewModel(
     val driveSyncMessage: StateFlow<String?> = _driveSyncMessage.asStateFlow()
 
     private var hasLoadedInitialTrending = false
+    private var hasLoadedInitialDiscover = false
     private var activeQueueTracks: List<MusicTrack> = emptyList()
 
     private val _playerState = MutableStateFlow(PlayerUiState())
@@ -186,6 +238,20 @@ class MusicPlayerViewModel(
         if (favoriteTracksRepository == null || currentUserId == "guest") return false
         val signedUid = runCatching { Firebase.auth.currentUser?.uid }.getOrNull()
         return !signedUid.isNullOrBlank() && signedUid == currentUserId
+    }
+
+    private fun isCloudSocialActive(): Boolean {
+        if (trackSocialRepository == null || currentUserId == "guest") return false
+        val signedUid = runCatching { Firebase.auth.currentUser?.uid }.getOrNull()
+        return !signedUid.isNullOrBlank() && signedUid == currentUserId
+    }
+
+    private fun resolveAuthorUsername(): String {
+        val accountName = activeAccount?.username?.trim().orEmpty()
+        if (accountName.isNotEmpty()) return accountName
+        val display = runCatching { Firebase.auth.currentUser?.displayName?.trim() }.getOrNull().orEmpty()
+        if (display.isNotEmpty()) return display.take(24)
+        return "کاربر"
     }
 
     val filteredTracks: StateFlow<List<MusicTrack>> = combine(
@@ -492,6 +558,11 @@ class MusicPlayerViewModel(
                 track.copy(isFavorite = track.id in favoriteIds)
             }
         }
+        if (_discoverTracks.value.isNotEmpty()) {
+            _discoverTracks.value = _discoverTracks.value.map { track ->
+                track.copy(isFavorite = track.id in favoriteIds)
+            }
+        }
         mediaController?.let { syncFromController(it) }
     }
 
@@ -533,6 +604,7 @@ class MusicPlayerViewModel(
     private fun findTrackById(id: String): MusicTrack? {
         return _allTracks.value.firstOrNull { it.id == id }
             ?: _trendingTracks.value.firstOrNull { it.id == id }
+            ?: _discoverTracks.value.firstOrNull { it.id == id }
             ?: _favoriteOnlineTracks.value.firstOrNull { it.id == id }
             ?: _cloudFavorites.value?.firstOrNull { it.id == id }
             ?: activeQueueTracks.firstOrNull { it.id == id }
@@ -581,8 +653,39 @@ class MusicPlayerViewModel(
 
     fun selectTab(tab: AppTab) {
         _activeTab.value = tab
-        if (tab == AppTab.TRENDING && !hasLoadedInitialTrending && !_isLoadingTrending.value) {
-            loadTrendingTracks(forceRefresh = false)
+        if (tab == AppTab.ONLINE) {
+            when (_onlineSubSection.value) {
+                OnlineSubSection.TRENDING -> {
+                    if (!hasLoadedInitialTrending && !_isLoadingTrending.value) {
+                        loadTrendingTracks(forceRefresh = false)
+                    }
+                }
+                OnlineSubSection.DISCOVER -> {
+                    if (!hasLoadedInitialDiscover && !_isLoadingDiscover.value) {
+                        loadDiscoverTracks(forceRefresh = false)
+                    }
+                }
+            }
+        }
+    }
+
+    fun selectOnlineSubSection(subSection: OnlineSubSection) {
+        _onlineSubSection.value = subSection
+        when (subSection) {
+            OnlineSubSection.TRENDING -> {
+                if (!hasLoadedInitialTrending && !_isLoadingTrending.value) {
+                    loadTrendingTracks(forceRefresh = false)
+                } else {
+                    refreshSocialSummariesForTracks(_trendingTracks.value)
+                }
+            }
+            OnlineSubSection.DISCOVER -> {
+                if (!hasLoadedInitialDiscover && !_isLoadingDiscover.value) {
+                    loadDiscoverTracks(forceRefresh = false)
+                } else {
+                    refreshSocialSummariesForTracks(_discoverTracks.value)
+                }
+            }
         }
     }
 
@@ -604,6 +707,7 @@ class MusicPlayerViewModel(
                 _trendingTracks.value = list
                 _trendingError.value = null
                 mediaController?.let { syncFromController(it) }
+                refreshSocialSummariesForTracks(list)
             }.onFailure { err ->
                 CrashReporter.recordNonFatal("TRENDING_FETCH", err, context = appContext)
                 _trendingError.value = "دریافت ترندهای اینستاگرام ممکن نشد. اتصال اینترنت را بررسی کنید."
@@ -636,6 +740,203 @@ class MusicPlayerViewModel(
     fun clearTrendingSearch() {
         _trendingSearchQuery.value = ""
         loadTrendingTracks(forceRefresh = true)
+    }
+
+    fun loadDiscoverTracks(forceRefresh: Boolean = true) {
+        if (!forceRefresh && hasLoadedInitialDiscover && _discoverTracks.value.isNotEmpty()) return
+        discoverLoadJob?.cancel()
+        discoverLoadJob = viewModelScope.launch {
+            _isLoadingDiscover.value = true
+            _discoverError.value = null
+            val favIds = preferences.prefsFlow.first().favoriteIds
+            val result = trendingRepository.fetchDiscoverTracks(
+                style = _discoverStyle.value,
+                customQuery = _discoverSearchQuery.value,
+                favoriteIds = favIds
+            )
+            result.onSuccess { list ->
+                hasLoadedInitialDiscover = true
+                _discoverTracks.value = list
+                _discoverError.value = null
+                mediaController?.let { syncFromController(it) }
+                refreshSocialSummariesForTracks(list)
+            }.onFailure { err ->
+                CrashReporter.recordNonFatal("DISCOVER_FETCH", err, context = appContext)
+                _discoverError.value = "دریافت آهنگ‌های آنلاین ممکن نشد. اتصال اینترنت را بررسی کنید."
+            }
+            _isLoadingDiscover.value = false
+        }
+    }
+
+    fun setDiscoverStyle(style: OnlineDiscoverStyle) {
+        if (_discoverStyle.value == style && _discoverSearchQuery.value.isBlank()) return
+        _discoverStyle.value = style
+        _discoverSearchQuery.value = ""
+        loadDiscoverTracks(forceRefresh = true)
+    }
+
+    fun setDiscoverSearchQuery(query: String) {
+        _discoverSearchQuery.value = query
+    }
+
+    fun submitDiscoverSearch() {
+        loadDiscoverTracks(forceRefresh = true)
+    }
+
+    fun clearDiscoverSearch() {
+        _discoverSearchQuery.value = ""
+        loadDiscoverTracks(forceRefresh = true)
+    }
+
+    fun refreshSocialSummariesForTracks(tracks: List<MusicTrack>) {
+        val repo = trackSocialRepository ?: return
+        if (!isCloudSocialActive() || tracks.isEmpty()) return
+        socialSummariesJob?.cancel()
+        socialSummariesJob = viewModelScope.launch {
+            val fetched = repo.fetchSummariesForTracks(tracks)
+            if (fetched.isNotEmpty()) {
+                _trackSocialSummaries.value = _trackSocialSummaries.value + fetched
+            }
+        }
+    }
+
+    fun openTrackSocialSheet(track: MusicTrack) {
+        _activeSocialTrack.value = track
+        _commentsError.value = null
+        val trackKey = TrackSocialRepository.toTrackKey(track)
+        val cached = _trackSocialSummaries.value[track.id]
+        _activeTrackSummary.value = cached ?: TrackReactionSummary(trackKey = trackKey)
+
+        val repo = trackSocialRepository
+        if (repo == null || !isCloudSocialActive()) {
+            _activeTrackComments.value = emptyList()
+            _isLoadingComments.value = false
+            return
+        }
+
+        activeReactionsJob?.cancel()
+        activeReactionsJob = viewModelScope.launch {
+            repo.observeTrackReactionSummary(trackKey)
+                .catch { error ->
+                    val root = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (root == null && error is CancellationException) throw error
+                }
+                .collect { summary ->
+                    val currentCommentCount = _activeTrackComments.value.size
+                        .coerceAtLeast(_trackSocialSummaries.value[track.id]?.commentCount ?: 0)
+                    val merged = summary.copy(commentCount = currentCommentCount)
+                    _activeTrackSummary.value = merged
+                    _trackSocialSummaries.value = _trackSocialSummaries.value + (track.id to merged)
+                }
+        }
+
+        activeCommentsJob?.cancel()
+        _isLoadingComments.value = true
+        activeCommentsJob = viewModelScope.launch {
+            repo.observeTrackComments(trackKey)
+                .catch { error ->
+                    val rootFirestore = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (rootFirestore == null && error is CancellationException) throw error
+                    _isLoadingComments.value = false
+                    _commentsError.value = when (rootFirestore?.code) {
+                        FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                            "دسترسی به بخش نظرات مجاز نیست."
+                        FirebaseFirestoreException.Code.UNAVAILABLE ->
+                            "ارتباط با Cloud Firestore برقرار نشد."
+                        else ->
+                            rootFirestore?.localizedMessage
+                                ?: error.localizedMessage
+                                ?: "خطا در بارگذاری نظرات"
+                    }
+                }
+                .collect { comments ->
+                    _isLoadingComments.value = false
+                    _commentsError.value = null
+                    _activeTrackComments.value = comments
+                    val updatedSummary = _activeTrackSummary.value.copy(commentCount = comments.size)
+                    _activeTrackSummary.value = updatedSummary
+                    _trackSocialSummaries.value = _trackSocialSummaries.value + (track.id to updatedSummary)
+                }
+        }
+    }
+
+    fun closeTrackSocialSheet() {
+        activeReactionsJob?.cancel()
+        activeCommentsJob?.cancel()
+        _activeSocialTrack.value = null
+        _isLoadingComments.value = false
+        _commentsError.value = null
+    }
+
+    fun toggleTrackReaction(track: MusicTrack, reaction: TrackReactionType) {
+        val repo = trackSocialRepository
+        if (repo == null || !isCloudSocialActive()) {
+            _statusMessage.value = "برای ثبت ری‌اکت لطفاً ابتدا با حساب گوگل وارد شوید"
+            return
+        }
+        val author = resolveAuthorUsername()
+        viewModelScope.launch {
+            val result = repo.toggleReaction(track, reaction, author)
+            result.onSuccess { newSelection ->
+                val fresh = repo.fetchTrackSummary(track)
+                if (fresh != null) {
+                    _trackSocialSummaries.value = _trackSocialSummaries.value + (track.id to fresh)
+                    if (_activeSocialTrack.value?.id == track.id) {
+                        _activeTrackSummary.value = fresh.copy(
+                            commentCount = _activeTrackComments.value.size.coerceAtLeast(fresh.commentCount)
+                        )
+                    }
+                }
+                _statusMessage.value = if (newSelection != null) {
+                    "واکنش ${newSelection.emoji} ثبت شد"
+                } else {
+                    "واکنش شما برداشته شد"
+                }
+            }.onFailure { err ->
+                _statusMessage.value = err.localizedMessage ?: "خطا در ثبت واکنش"
+            }
+        }
+    }
+
+    fun submitTrackComment(track: MusicTrack, rawText: String) {
+        val repo = trackSocialRepository
+        if (repo == null || !isCloudSocialActive()) {
+            _statusMessage.value = "برای ارسال نظر لطفاً ابتدا با حساب گوگل وارد شوید"
+            return
+        }
+        val cleaned = TrackSocialRepository.sanitizeCommentText(rawText)
+        if (cleaned == null) {
+            _statusMessage.value = "لطفاً متن نظر خود را بنویسید"
+            return
+        }
+        val author = resolveAuthorUsername()
+        viewModelScope.launch {
+            _isSubmittingComment.value = true
+            val result = repo.addComment(track, cleaned, author)
+            _isSubmittingComment.value = false
+            result.onSuccess {
+                _statusMessage.value = "نظر شما ثبت شد"
+            }.onFailure { err ->
+                _statusMessage.value = err.localizedMessage ?: "ارسال نظر با خطا مواجه شد"
+            }
+        }
+    }
+
+    fun deleteTrackComment(track: MusicTrack, commentId: String) {
+        val repo = trackSocialRepository
+        if (repo == null || !isCloudSocialActive()) return
+        viewModelScope.launch {
+            val result = repo.deleteComment(track, commentId)
+            result.onSuccess {
+                _statusMessage.value = "نظر حذف شد"
+            }.onFailure { err ->
+                _statusMessage.value = err.localizedMessage ?: "حذف نظر با خطا مواجه شد"
+            }
+        }
     }
 
     fun scanDeviceMusic(showResultMessage: Boolean = true) {
@@ -694,6 +995,12 @@ class MusicPlayerViewModel(
         playFromQueue(track, list, controller)
     }
 
+    fun playDiscoverTrack(track: MusicTrack) {
+        val controller = mediaController ?: return
+        val list = _discoverTracks.value.ifEmpty { listOf(track) }
+        playFromQueue(track, list, controller)
+    }
+
     fun playFavoriteTrack(track: MusicTrack) {
         val controller = mediaController ?: return
         val currentFavorites = when (val state = favoritesUiState.value) {
@@ -737,13 +1044,24 @@ class MusicPlayerViewModel(
         if (controller.isPlaying) {
             controller.pause()
         } else if (controller.mediaItemCount == 0) {
-            val firstTrack = if (_activeTab.value == AppTab.TRENDING) {
-                _trendingTracks.value.firstOrNull() ?: _allTracks.value.firstOrNull()
+            val firstTrack = if (_activeTab.value == AppTab.ONLINE) {
+                when (_onlineSubSection.value) {
+                    OnlineSubSection.TRENDING -> _trendingTracks.value.firstOrNull() ?: _discoverTracks.value.firstOrNull()
+                    OnlineSubSection.DISCOVER -> _discoverTracks.value.firstOrNull() ?: _trendingTracks.value.firstOrNull()
+                } ?: _allTracks.value.firstOrNull()
             } else {
                 _allTracks.value.firstOrNull() ?: _trendingTracks.value.firstOrNull()
             }
             if (firstTrack != null) {
-                if (firstTrack.isOnline) playTrendingTrack(firstTrack) else playTrack(firstTrack)
+                if (firstTrack.isOnline) {
+                    if (_onlineSubSection.value == OnlineSubSection.DISCOVER && _discoverTracks.value.any { it.id == firstTrack.id }) {
+                        playDiscoverTrack(firstTrack)
+                    } else {
+                        playTrendingTrack(firstTrack)
+                    }
+                } else {
+                    playTrack(firstTrack)
+                }
             }
         } else {
             controller.prepare()
@@ -984,13 +1302,22 @@ class MusicPlayerViewModel(
             else -> ""
         }
         when (targetTab) {
-            AppTab.TRENDING -> {
-                _activeTab.value = AppTab.TRENDING
-                result.suggestedMoodPreset?.let { _trendingPreset.value = it }
-                _trendingSearchQuery.value = effectiveQuery
-                loadTrendingTracks(forceRefresh = true)
-                if (effectiveQuery.isNotBlank()) {
-                    _statusMessage.value = "جستجوی هوشمند ترند: «$effectiveQuery»"
+            AppTab.ONLINE -> {
+                _activeTab.value = AppTab.ONLINE
+                if (_onlineSubSection.value == OnlineSubSection.DISCOVER && result.suggestedMoodPreset == null) {
+                    _discoverSearchQuery.value = effectiveQuery
+                    loadDiscoverTracks(forceRefresh = true)
+                    if (effectiveQuery.isNotBlank()) {
+                        _statusMessage.value = "جستجوی هوشمند آنلاین: «$effectiveQuery»"
+                    }
+                } else {
+                    _onlineSubSection.value = OnlineSubSection.TRENDING
+                    result.suggestedMoodPreset?.let { _trendingPreset.value = it }
+                    _trendingSearchQuery.value = effectiveQuery
+                    loadTrendingTracks(forceRefresh = true)
+                    if (effectiveQuery.isNotBlank()) {
+                        _statusMessage.value = "جستجوی هوشمند ترند: «$effectiveQuery»"
+                    }
                 }
             }
             AppTab.FAVORITES -> {
@@ -1074,10 +1401,14 @@ class MusicPlayerViewModel(
     override fun onCleared() {
         progressJob?.cancel()
         trendingLoadJob?.cancel()
+        discoverLoadJob?.cancel()
         autoDriveSyncJob?.cancel()
         voiceRecordingJob?.cancel()
         aiVoiceJob?.cancel()
         cloudFavoritesJob?.cancel()
+        socialSummariesJob?.cancel()
+        activeReactionsJob?.cancel()
+        activeCommentsJob?.cancel()
         audioVoiceRecorder.cancelRecording()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null

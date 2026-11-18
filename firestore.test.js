@@ -308,3 +308,158 @@ test("Authenticated owner can create, list, update, and delete favorites; unauth
   await assertSucceeds(favDocRef.delete());
 });
 
+test("Track reactions: authenticated users can read, create, switch emoji, and remove own reaction; cross-user or invalid writes fail", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore(DATABASE_ID);
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore(DATABASE_ID);
+  const trackKey = "ir_musicsweb_101";
+
+  const aliceReactionRef = aliceDb.collection("tracks").doc(trackKey).collection("reactions").doc(ALICE_UID);
+  const validReaction = {
+    userId: ALICE_UID,
+    trackKey,
+    trackTitle: "شبای تهران",
+    emojiType: "FIRE",
+    authorUsername: "Ali1",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  // Alice creates reaction
+  await assertSucceeds(aliceReactionRef.set(validReaction));
+
+  // Bob can read/list all reactions on the track
+  await assertSucceeds(bobDb.collection("tracks").doc(trackKey).collection("reactions").get());
+
+  // Alice switches her reaction emoji via partial update preserving immutable fields
+  await assertSucceeds(
+    aliceReactionRef.update({
+      emojiType: "LOVE",
+      authorUsername: "Ali1",
+      trackTitle: "شبای تهران",
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Immutable trackKey tamper on update must fail
+  await assertFails(
+    aliceReactionRef.update({
+      trackKey: "other_track",
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Invalid emoji enum must fail
+  await assertFails(
+    bobDb.collection("tracks").doc(trackKey).collection("reactions").doc(BOB_UID).set({
+      ...validReaction,
+      userId: BOB_UID,
+      authorUsername: "Bob",
+      emojiType: "INVALID_EMOJI",
+    })
+  );
+
+  // Bob cannot overwrite or delete Alice's reaction
+  await assertFails(
+    bobDb.collection("tracks").doc(trackKey).collection("reactions").doc(ALICE_UID).set({
+      ...validReaction,
+      userId: BOB_UID,
+    })
+  );
+  await assertFails(
+    bobDb.collection("tracks").doc(trackKey).collection("reactions").doc(ALICE_UID).delete()
+  );
+
+  // Unauthenticated cannot read or write reactions
+  const unauthDb = testEnv.unauthenticatedContext().firestore(DATABASE_ID);
+  await assertFails(unauthDb.collection("tracks").doc(trackKey).collection("reactions").get());
+
+  // Alice can delete her own reaction
+  await assertSucceeds(aliceReactionRef.delete());
+});
+
+test("Track comments: authenticated users can read and post comments; only owner can edit/delete own comments", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore(DATABASE_ID);
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore(DATABASE_ID);
+  const trackKey = "ir_musicsweb_101";
+  const commentId = "cmt_alice_001";
+
+  const aliceCommentRef = aliceDb.collection("tracks").doc(trackKey).collection("comments").doc(commentId);
+  const validComment = {
+    commentId,
+    trackKey,
+    trackTitle: "شبای تهران",
+    userId: ALICE_UID,
+    authorUsername: "Ali1",
+    text: "این آهنگ فوق‌العاده‌ست برای رانندگی شبانه!",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  // Alice creates comment
+  await assertSucceeds(aliceCommentRef.set(validComment));
+
+  // Bob can list comments ordered by createdAt desc
+  await assertSucceeds(
+    bobDb.collection("tracks").doc(trackKey).collection("comments").orderBy("createdAt", "desc").get()
+  );
+
+  // Owner can edit text while preserving immutable fields
+  await assertSucceeds(
+    aliceCommentRef.update({
+      text: "فوق‌العاده عالی برای ماشین!",
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Bob cannot update or delete Alice's comment
+  await assertFails(
+    bobDb.collection("tracks").doc(trackKey).collection("comments").doc(commentId).update({
+      text: "هک شد",
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    bobDb.collection("tracks").doc(trackKey).collection("comments").doc(commentId).delete()
+  );
+
+  // Spoofed userId on create fails
+  await assertFails(
+    bobDb.collection("tracks").doc(trackKey).collection("comments").doc("cmt_bob_spoof").set({
+      ...validComment,
+      commentId: "cmt_bob_spoof",
+      userId: ALICE_UID,
+    })
+  );
+
+  // Oversized text > 500 chars fails
+  await assertFails(
+    bobDb.collection("tracks").doc(trackKey).collection("comments").doc("cmt_bob_long").set({
+      ...validComment,
+      commentId: "cmt_bob_long",
+      userId: BOB_UID,
+      authorUsername: "Bob",
+      text: "A".repeat(501),
+    })
+  );
+
+  // Future client timestamp fails
+  await assertFails(
+    bobDb.collection("tracks").doc(trackKey).collection("comments").doc("cmt_bob_future").set({
+      ...validComment,
+      commentId: "cmt_bob_future",
+      userId: BOB_UID,
+      authorUsername: "Bob",
+      createdAt: new Date(Date.now() + 600_000),
+      updatedAt: new Date(Date.now() + 600_000),
+    })
+  );
+
+  // Unauthenticated read/write fails
+  const unauthDb = testEnv.unauthenticatedContext().firestore(DATABASE_ID);
+  await assertFails(unauthDb.collection("tracks").doc(trackKey).collection("comments").get());
+
+  // Alice deletes her own comment
+  await assertSucceeds(aliceCommentRef.delete());
+});
+
+

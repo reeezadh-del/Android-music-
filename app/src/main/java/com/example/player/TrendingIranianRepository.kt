@@ -67,6 +67,40 @@ class TrendingIranianRepository(
         }
     }
 
+    suspend fun fetchDiscoverTracks(
+        style: OnlineDiscoverStyle,
+        customQuery: String = "",
+        favoriteIds: Set<String> = emptySet()
+    ): Result<List<MusicTrack>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val queries = if (customQuery.isNotBlank()) {
+                listOf(customQuery.trim(), "${customQuery.trim()} آهنگ جدید")
+            } else {
+                style.searchKeywords
+            }
+
+            val collected = coroutineScope {
+                IRANIAN_SITES.map { site ->
+                    async {
+                        fetchFromIranianSite(
+                            site = site,
+                            queries = queries,
+                            preset = TrendingPreset.HOT,
+                            category = TrendingCategory.ALL,
+                            favoriteIds = favoriteIds
+                        )
+                    }
+                }.awaitAll().flatten()
+            }
+
+            if (collected.isEmpty()) {
+                throw IllegalStateException("خطا در دریافت آهنگ‌های آنلاین از سرورها")
+            }
+
+            deduplicateAndRank(collected, TrendingCategory.ALL)
+        }
+    }
+
     private fun buildInstagramSearchQueries(
         preset: TrendingPreset,
         category: TrendingCategory,

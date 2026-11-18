@@ -20,15 +20,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,7 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,6 +48,9 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.player.MusicTrack
 import com.example.ui.components.AlbumCoverImage
+import com.example.ui.components.AnimatedEqualizerBars
+import com.example.ui.components.AvaSearchField
+import com.example.ui.components.StudioHeroBanner
 import com.example.ui.components.formatDuration
 import com.example.ui.viewmodel.FavoritesUiState
 
@@ -110,27 +108,10 @@ fun FavoritesScreen(
             .testTag("favorites_screen"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Hero Header Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        )
-                    )
-                )
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                    RoundedCornerShape(22.dp)
-                )
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        // Studio Hero Header Card
+        StudioHeroBanner(
+            modifier = Modifier.padding(top = 8.dp),
+            accentColor = MaterialTheme.colorScheme.primary
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -146,7 +127,14 @@ fun FavoritesScreen(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.primary),
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(
+                                        MaterialTheme.colorScheme.primary,
+                                        MaterialTheme.colorScheme.secondary
+                                    )
+                                )
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -176,7 +164,12 @@ fun FavoritesScreen(
 
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f)
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                    modifier = Modifier.border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+                        RoundedCornerShape(12.dp)
+                    )
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -220,7 +213,7 @@ fun FavoritesScreen(
                 ) {
                     Button(
                         onClick = onPlayAll,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
@@ -232,7 +225,7 @@ fun FavoritesScreen(
                     }
                     OutlinedButton(
                         onClick = onShuffleAll,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
@@ -326,43 +319,15 @@ fun FavoritesScreen(
             }
         }
 
-        // Search Bar
-        OutlinedTextField(
+        // Pill Search Bar
+        AvaSearchField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = { Text(stringResource(R.string.favorites_search_hint)) },
-            leadingIcon = {
-                Icon(Icons.Rounded.Search, contentDescription = null)
-            },
-            trailingIcon = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(
-                            onClick = { onSearchQueryChange("") },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Rounded.Close, contentDescription = "پاک کردن")
-                        }
-                    }
-                    IconButton(
-                        onClick = onVoiceSearchClick,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("voice_search_favorites_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Mic,
-                            contentDescription = stringResource(R.string.favorites_voice_search_cd),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("favorites_search_input")
+            placeholderText = stringResource(R.string.favorites_search_hint),
+            voiceContentDescription = stringResource(R.string.favorites_voice_search_cd),
+            onVoiceSearchClick = onVoiceSearchClick,
+            inputTestTag = "favorites_search_input",
+            voiceTestTag = "voice_search_favorites_button"
         )
 
         // Content List / Loading / Empty
@@ -469,10 +434,21 @@ private fun FavoriteTrackRowItem(
     onRemoveFavorite: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val borderColor = if (isCurrent) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.78f)
+    val shape = RoundedCornerShape(20.dp)
+    val borderBrush = if (isCurrent) {
+        Brush.linearGradient(
+            listOf(
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)
+            )
+        )
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+        Brush.linearGradient(
+            listOf(
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+            )
+        )
     }
     val containerColor = if (isCurrent) {
         MaterialTheme.colorScheme.surfaceContainerHigh
@@ -483,34 +459,54 @@ private fun FavoriteTrackRowItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(shape)
             .background(containerColor)
-            .border(1.dp, borderColor, RoundedCornerShape(18.dp))
+            .border(if (isCurrent) 1.2.dp else 1.dp, borderBrush, shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp)
             .testTag("favorite_row_${track.id}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (isCurrent) {
+            Box(
+                modifier = Modifier
+                    .width(3.5.dp)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.secondary
+                            )
+                        )
+                    )
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
         Box(contentAlignment = Alignment.Center) {
             AlbumCoverImage(
                 artworkUri = track.artworkUri,
                 contentDescription = track.title,
-                modifier = Modifier.size(54.dp),
-                shape = RoundedCornerShape(13.dp)
+                modifier = Modifier
+                    .size(54.dp)
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        RoundedCornerShape(14.dp)
+                    ),
+                shape = RoundedCornerShape(14.dp)
             )
             if (isCurrent && isPlaying) {
                 Box(
                     modifier = Modifier
                         .size(54.dp)
-                        .clip(RoundedCornerShape(13.dp))
-                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.55f)),
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.62f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.GraphicEq,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                    AnimatedEqualizerBars(barColor = MaterialTheme.colorScheme.primary)
                 }
             }
         }

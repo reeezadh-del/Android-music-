@@ -18,25 +18,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,8 +51,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.player.MusicTrack
+import com.example.player.TrackReactionSummary
+import com.example.player.TrackReactionType
 import com.example.player.TrendingCategory
 import com.example.player.TrendingPreset
+import com.example.ui.components.AvaSearchField
+import com.example.ui.components.StudioHeroBanner
 import com.example.ui.components.TrendingTrackRowItem
 
 @Composable
@@ -76,7 +78,11 @@ fun TrendingIranianScreen(
     onRefresh: () -> Unit,
     onPlayTrack: (MusicTrack) -> Unit,
     onToggleFavorite: (MusicTrack) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    socialSummaries: Map<String, TrackReactionSummary> = emptyMap(),
+    onToggleReaction: ((MusicTrack, TrackReactionType) -> Unit)? = null,
+    onOpenComments: ((MusicTrack) -> Unit)? = null,
+    showHeaderBanner: Boolean = true
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -86,28 +92,12 @@ fun TrendingIranianScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Gradient Hero Header Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        )
-                    )
-                )
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                    RoundedCornerShape(22.dp)
-                )
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        if (showHeaderBanner) {
+            // Studio Hero Header Card
+            StudioHeroBanner(
+                modifier = Modifier.padding(top = 8.dp),
+                accentColor = MaterialTheme.colorScheme.secondary
+            ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -122,7 +112,14 @@ fun TrendingIranianScreen(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.primary),
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(
+                                        MaterialTheme.colorScheme.primary,
+                                        MaterialTheme.colorScheme.secondary
+                                    )
+                                )
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -150,72 +147,59 @@ fun TrendingIranianScreen(
                     }
                 }
 
-                IconButton(
-                    onClick = onRefresh,
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
                     modifier = Modifier
                         .size(48.dp)
-                        .testTag("trending_refresh_button")
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+                            CircleShape
+                        )
                 ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = stringResource(R.string.trending_refresh),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                    IconButton(
+                        onClick = onRefresh,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("trending_refresh_button")
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = stringResource(R.string.trending_refresh),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
         }
+        }
 
-        // Live Search Input
-        OutlinedTextField(
+        // Live Pill Search Input
+        AvaSearchField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = { Text(stringResource(R.string.trending_search_hint)) },
-            leadingIcon = {
-                IconButton(onClick = {
-                    focusManager.clearFocus()
-                    onSubmitSearch()
-                }) {
-                    Icon(Icons.Rounded.Search, contentDescription = "جستجو")
-                }
+            placeholderText = stringResource(R.string.trending_search_hint),
+            voiceContentDescription = stringResource(R.string.voice_search_cd),
+            onVoiceSearchClick = {
+                focusManager.clearFocus()
+                onVoiceSearchClick()
             },
-            trailingIcon = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(
-                            onClick = {
-                                focusManager.clearFocus()
-                                onClearSearch()
-                            },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Rounded.Close, contentDescription = "پاک کردن")
-                        }
-                    }
-                    IconButton(
-                        onClick = {
-                            focusManager.clearFocus()
-                            onVoiceSearchClick()
-                        },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("voice_search_trending_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Mic,
-                            contentDescription = stringResource(R.string.voice_search_cd),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
+            onSubmitSearch = {
+                focusManager.clearFocus()
+                onSubmitSearch()
             },
-            singleLine = true,
+            onClearSearch = {
+                focusManager.clearFocus()
+                onClearSearch()
+            },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(
                 onSearch = {
@@ -223,10 +207,8 @@ fun TrendingIranianScreen(
                     onSubmitSearch()
                 }
             ),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("trending_search_input")
+            inputTestTag = "trending_search_input",
+            voiceTestTag = "voice_search_trending_button"
         )
 
         // Category Chips (All / Songs / Remixes)
@@ -235,8 +217,9 @@ fun TrendingIranianScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             items(TrendingCategory.entries) { category ->
+                val selected = selectedCategory == category
                 FilterChip(
-                    selected = selectedCategory == category,
+                    selected = selected,
                     onClick = { onSelectCategory(category) },
                     label = { Text(category.labelFa) },
                     leadingIcon = {
@@ -250,6 +233,13 @@ fun TrendingIranianScreen(
                             modifier = Modifier.size(16.dp)
                         )
                     },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                    ),
                     modifier = Modifier.testTag("trending_cat_${category.name}")
                 )
             }
@@ -261,8 +251,9 @@ fun TrendingIranianScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             items(TrendingPreset.entries) { preset ->
+                val selected = selectedPreset == preset && searchQuery.isBlank()
                 FilterChip(
-                    selected = selectedPreset == preset && searchQuery.isBlank(),
+                    selected = selected,
                     onClick = {
                         focusManager.clearFocus()
                         onSelectPreset(preset)
@@ -275,6 +266,13 @@ fun TrendingIranianScreen(
                             modifier = Modifier.size(14.dp)
                         )
                     },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.secondary
+                    ),
                     modifier = Modifier.testTag("trending_preset_${preset.name}")
                 )
             }
@@ -408,7 +406,14 @@ fun TrendingIranianScreen(
                             isCurrent = currentTrackId == track.id,
                             isPlaying = isPlaying,
                             onClick = { onPlayTrack(track) },
-                            onToggleFavorite = { onToggleFavorite(track) }
+                            onToggleFavorite = { onToggleFavorite(track) },
+                            socialSummary = socialSummaries[track.id],
+                            onToggleReaction = onToggleReaction?.let { cb ->
+                                { reaction -> cb(track, reaction) }
+                            },
+                            onOpenComments = onOpenComments?.let { cb ->
+                                { cb(track) }
+                            }
                         )
                     }
                 }

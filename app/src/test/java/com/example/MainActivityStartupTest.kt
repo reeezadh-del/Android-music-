@@ -143,11 +143,26 @@ class MainActivityStartupTest {
                 composeRule.waitForIdle()
             }
 
-            composeRule.onNodeWithTag("nav_tab_trending").performClick()
+            composeRule.onNodeWithTag("nav_tab_online").performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("online_screen").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("online_screen").assertIsDisplayed()
+            composeRule.onNodeWithTag("online_subtab_TRENDING").assertIsDisplayed()
+            composeRule.onNodeWithTag("online_subtab_DISCOVER").assertIsDisplayed()
+            composeRule.onNodeWithTag("voice_search_trending_button").assertIsDisplayed()
+
+            composeRule.onNodeWithTag("online_subtab_DISCOVER").performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("discover_search_input").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("discover_search_input").assertIsDisplayed()
+            composeRule.onNodeWithTag("online_style_NEW_HITS").assertIsDisplayed()
+
+            composeRule.onNodeWithTag("online_subtab_TRENDING").performClick()
             composeRule.waitUntil(3_000) {
                 composeRule.onAllNodesWithTag("voice_search_trending_button").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithTag("voice_search_trending_button").assertIsDisplayed()
 
             composeRule.onNodeWithTag("nav_tab_favorites").performClick()
             composeRule.waitUntil(3_000) {

@@ -15,17 +15,17 @@ import androidx.compose.ui.unit.dp
 
 private val AvaDarkColorScheme = darkColorScheme(
     primary = CoralPrimary,
-    onPrimary = Color(0xFF1F0803),
+    onPrimary = Color(0xFF230803),
     primaryContainer = CoralContainer,
-    onPrimaryContainer = Color(0xFFFFDAD1),
+    onPrimaryContainer = Color(0xFFFFDDD4),
     secondary = AmberSecondary,
     onSecondary = Color(0xFF281800),
     secondaryContainer = AmberContainer,
-    onSecondaryContainer = Color(0xFFFFDFB0),
+    onSecondaryContainer = Color(0xFFFFE1B4),
     tertiary = AutoTurquoise,
-    onTertiary = Color(0xFF002522),
+    onTertiary = Color(0xFF002622),
     tertiaryContainer = AutoTurquoiseContainer,
-    onTertiaryContainer = Color(0xFF9DF7EE),
+    onTertiaryContainer = Color(0xFFA2FAF0),
     background = ObsidianBg,
     onBackground = TextPrimaryDark,
     surface = ObsidianSurface,
@@ -36,8 +36,9 @@ private val AvaDarkColorScheme = darkColorScheme(
     surfaceContainerLow = ObsidianSurface,
     surfaceContainer = ObsidianSurfaceHigh,
     surfaceContainerHigh = ObsidianSurfaceElevated,
+    surfaceContainerHighest = ObsidianSurfaceHighest,
     outline = ObsidianBorder,
-    outlineVariant = Color(0xFF232333)
+    outlineVariant = Color(0xFF262A40)
 )
 
 private val AvaLightColorScheme = lightColorScheme(

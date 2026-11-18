@@ -282,7 +282,7 @@ fun AiVoiceSearchDialog(
                             }
                         }
 
-                        if (targetTab != AppTab.TRENDING) {
+                        if (targetTab != AppTab.ONLINE) {
                             Button(
                                 onClick = { onApplyToLibrary(res) },
                                 shape = RoundedCornerShape(14.dp),
