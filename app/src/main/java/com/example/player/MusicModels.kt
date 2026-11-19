@@ -98,5 +98,7 @@ data class MusicTrack(
     val isFullTrack: Boolean = true,
     val sourceLabel: String = "",
     val playCount: Long = 0L,
-    val trendScore: Long = 0L
+    val trendScore: Long = 0L,
+    val lyrics: String = "",
+    val pageUrl: String = ""
 )

@@ -117,6 +117,7 @@ import com.example.drive.DriveDbSnapshot
 import com.example.player.AppTab
 import com.example.player.AutoSpeedVolumeManager
 import com.example.player.FavoriteTracksRepository
+import com.example.player.OnlineSubSection
 import com.example.player.RepeatModeOption
 import com.example.player.StoredMusicPrefs
 import com.example.player.TrackFilter
@@ -133,6 +134,7 @@ import com.example.ui.components.DrivingModeOverlay
 import com.example.ui.components.FullNowPlayingSheet
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.components.StudioHeroBanner
+import com.example.ui.components.TrackLyricsBottomSheet
 import com.example.ui.components.TrackRowItem
 import com.example.ui.components.TrackSocialBottomSheet
 import com.example.ui.screens.AuthGateScreen
@@ -902,6 +904,9 @@ fun SimpleMusicPlayerScreen(
     val isLoadingComments by viewModel.isLoadingComments.collectAsStateWithLifecycle()
     val isSubmittingComment by viewModel.isSubmittingComment.collectAsStateWithLifecycle()
     val commentsError by viewModel.commentsError.collectAsStateWithLifecycle()
+    val onlyWithLyricsFilter by viewModel.onlyWithLyricsFilter.collectAsStateWithLifecycle()
+    val activeLyricsTrack by viewModel.activeLyricsTrack.collectAsStateWithLifecycle()
+    val isLoadingLyrics by viewModel.isLoadingLyrics.collectAsStateWithLifecycle()
 
     val isSyncingDrive by viewModel.isSyncingDrive.collectAsStateWithLifecycle()
     val driveSyncMessage by viewModel.driveSyncMessage.collectAsStateWithLifecycle()
@@ -1623,6 +1628,9 @@ fun SimpleMusicPlayerScreen(
                                 onClearDiscoverSearch = viewModel::clearDiscoverSearch,
                                 onRefreshDiscover = { viewModel.loadDiscoverTracks(forceRefresh = true) },
                                 onPlayDiscoverTrack = viewModel::playDiscoverTrack,
+                                onlyWithLyrics = onlyWithLyricsFilter,
+                                onToggleOnlyWithLyrics = viewModel::toggleOnlyWithLyricsFilter,
+                                onOpenLyrics = viewModel::openTrackLyricsSheet,
                                 currentTrackId = activeTrack?.id,
                                 isPlaying = playerState.isPlaying,
                                 socialSummaries = trackSocialSummaries,
@@ -1750,7 +1758,10 @@ fun SimpleMusicPlayerScreen(
                     },
                     onOpenComments = {
                         viewModel.openTrackSocialSheet(activeTrack)
-                    }
+                    },
+                    onOpenLyrics = if (activeTrack.lyrics.isNotBlank()) {
+                        { viewModel.openTrackLyricsSheet(activeTrack) }
+                    } else null
                 )
             }
         }
@@ -1810,6 +1821,33 @@ fun SimpleMusicPlayerScreen(
                     onUpgradeToGoogle()
                 },
                 onDismiss = viewModel::closeTrackSocialSheet
+            )
+        }
+
+        val lyricsTrack = activeLyricsTrack
+        if (lyricsTrack != null) {
+            val isLyricsTrackPlaying = activeTrack?.id == lyricsTrack.id && playerState.isPlaying
+            TrackLyricsBottomSheet(
+                track = lyricsTrack,
+                isLoading = isLoadingLyrics,
+                isCurrentPlaying = isLyricsTrackPlaying,
+                onPlayOrToggle = {
+                    if (activeTrack?.id == lyricsTrack.id) {
+                        viewModel.togglePlayPause()
+                    } else if (onlineSubSection == OnlineSubSection.DISCOVER &&
+                        discoverTracks.any { it.id == lyricsTrack.id }
+                    ) {
+                        viewModel.playDiscoverTrack(lyricsTrack)
+                    } else {
+                        viewModel.playTrendingTrack(lyricsTrack)
+                    }
+                },
+                onToggleFavorite = { viewModel.toggleFavorite(lyricsTrack) },
+                onOpenComments = {
+                    viewModel.closeTrackLyricsSheet()
+                    viewModel.openTrackSocialSheet(lyricsTrack)
+                },
+                onDismiss = viewModel::closeTrackLyricsSheet
             )
         }
     }

@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -1036,7 +1037,8 @@ fun FullNowPlayingSheet(
     onOpenDrivingMode: (() -> Unit)? = null,
     socialSummary: TrackReactionSummary = TrackReactionSummary(),
     onToggleReaction: ((TrackReactionType) -> Unit)? = null,
-    onOpenComments: (() -> Unit)? = null
+    onOpenComments: (() -> Unit)? = null,
+    onOpenLyrics: (() -> Unit)? = null
 ) {
     BackHandler(onBack = onCollapse)
 
@@ -1284,6 +1286,42 @@ fun FullNowPlayingSheet(
                         onOpenComments = onOpenComments,
                         centered = true
                     )
+                }
+
+                if (track.lyrics.isNotBlank() && onOpenLyrics != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        onClick = onOpenLyrics,
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.78f),
+                        modifier = Modifier
+                            .height(36.dp)
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
+                                RoundedCornerShape(50)
+                            )
+                            .testTag("now_playing_lyrics_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.MenuBook,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.online_lyrics_badge),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
                 }
             }
 

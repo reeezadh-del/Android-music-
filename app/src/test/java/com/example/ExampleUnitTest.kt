@@ -451,5 +451,64 @@ class ExampleUnitTest {
             com.example.player.TrackSocialRepository.sanitizeCommentText("آ".repeat(700))?.length
         )
     }
+
+    @Test
+    fun `extractLyricsFromHtml extracts clean persian lyrics and ignores download footers`() {
+        val htmlWithLyrics = """
+            <p>دانلود آهنگ جدید رضا بهرام بنام شب</p>
+            <h3>متن آهنگ شب رضا بهرام</h3>
+            <p>───┤ ♩♬♫♪♭ ├───</p>
+            <p>امشب دلم هوای تو را کرده است<br/>
+            باران دوباره یاد تو را زنده کرده است<br/>
+            ای کاش بیایی و ببینی حالم را</p>
+            <p>───┤ ♩♬♫♪♭ ├───</p>
+            <p>دانلود آهنگ با کیفیت 320</p>
+            <a href="https://cdn.example.com/song-320.mp3">لینک مستقیم</a>
+        """.trimIndent()
+
+        val extracted = TrendingIranianRepository.extractLyricsFromHtml(htmlWithLyrics)
+        assertTrue(extracted.contains("امشب دلم هوای تو را کرده است"))
+        assertTrue(extracted.contains("باران دوباره یاد تو را زنده کرده است"))
+        assertFalse(extracted.contains("دانلود آهنگ با کیفیت 320"))
+        assertFalse(extracted.contains("───┤"))
+
+        val htmlWithoutLyrics = """
+            <p>دانلود آهنگ جدید با کیفیت عالی</p>
+            <a href="https://cdn.example.com/track.mp3">دانلود MP3</a>
+        """.trimIndent()
+        assertEquals("", TrendingIranianRepository.extractLyricsFromHtml(htmlWithoutLyrics))
+    }
+
+    @Test
+    fun `deduplicateAndRank preserves lyrics when merging duplicate tracks`() {
+        val noLyricsTrack = MusicTrack(
+            id = "ir_upmusics_1",
+            title = "شب",
+            artist = "رضا بهرام",
+            album = "ترند اینستا",
+            durationMs = 0L,
+            mediaUri = "https://cdn.a.ir/shab-320.mp3",
+            artworkUri = "https://cdn.a.ir/cover.jpg",
+            isOnline = true,
+            isInstaTrend = true,
+            trendScore = 50_000L,
+            lyrics = ""
+        )
+        val withLyricsTrack = noLyricsTrack.copy(
+            id = "ir_musicsweb_2",
+            mediaUri = "https://cdn.b.ir/shab-128.mp3",
+            artworkUri = "",
+            trendScore = 40_000L,
+            lyrics = "امشب دلم هوای تو را کرده است\nباران دوباره یاد تو را زنده کرده است"
+        )
+
+        val merged = TrendingIranianRepository.deduplicateAndRank(
+            listOf(noLyricsTrack, withLyricsTrack),
+            TrendingCategory.ALL
+        )
+        assertEquals(1, merged.size)
+        assertTrue(merged.first().lyrics.contains("امشب دلم هوای تو را کرده است"))
+        assertEquals("https://cdn.a.ir/cover.jpg", merged.first().artworkUri)
+    }
 }
 

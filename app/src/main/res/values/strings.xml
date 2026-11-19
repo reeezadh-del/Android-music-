@@ -146,4 +146,15 @@
     <string name="social_guest_signin_cta">ورود با گوگل برای ری‌اکت و نظر</string>
     <string name="social_open_comments">نظرات</string>
     <string name="auth_google_fallback_sign_in">تلاش با روش جایگزین گوگل</string>
+    <string name="online_live_eyebrow">پخش زنده آنلاین</string>
+    <string name="online_featured_trending">برترین ترند الان</string>
+    <string name="online_featured_discover">پیشنهاد ویژه آنلاین</string>
+    <string name="online_lyrics_badge">متن آهنگ</string>
+    <string name="online_lyrics_only_filter">فقط دارای متن</string>
+    <string name="online_lyrics_sheet_title">متن آهنگ</string>
+    <string name="online_lyrics_copy">کپی متن</string>
+    <string name="online_lyrics_copied">متن آهنگ کپی شد</string>
+    <string name="online_lyrics_share">اشتراک‌گذاری</string>
+    <string name="online_lyrics_loading">در حال دریافت متن آهنگ…</string>
+    <string name="online_lyrics_empty">متن آهنگ برای این قطعه در دسترس نیست.</string>
 </resources>

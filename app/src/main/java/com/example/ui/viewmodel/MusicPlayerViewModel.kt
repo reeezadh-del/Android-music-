@@ -117,6 +117,7 @@ class MusicPlayerViewModel(
     private var socialSummariesJob: Job? = null
     private var activeReactionsJob: Job? = null
     private var activeCommentsJob: Job? = null
+    private var lyricsFetchJob: Job? = null
 
     private val aiVoiceSearchRepository by lazy { AiVoiceSearchRepository() }
     private val audioVoiceRecorder by lazy { AudioVoiceRecorder(appContext) }
@@ -181,6 +182,15 @@ class MusicPlayerViewModel(
 
     private val _discoverError = MutableStateFlow<String?>(null)
     val discoverError: StateFlow<String?> = _discoverError.asStateFlow()
+
+    private val _onlyWithLyricsFilter = MutableStateFlow(false)
+    val onlyWithLyricsFilter: StateFlow<Boolean> = _onlyWithLyricsFilter.asStateFlow()
+
+    private val _activeLyricsTrack = MutableStateFlow<MusicTrack?>(null)
+    val activeLyricsTrack: StateFlow<MusicTrack?> = _activeLyricsTrack.asStateFlow()
+
+    private val _isLoadingLyrics = MutableStateFlow(false)
+    val isLoadingLyrics: StateFlow<Boolean> = _isLoadingLyrics.asStateFlow()
 
     // Social reactions & comments states
     private val _trackSocialSummaries = MutableStateFlow<Map<String, TrackReactionSummary>>(emptyMap())
@@ -872,6 +882,51 @@ class MusicPlayerViewModel(
         _commentsError.value = null
     }
 
+    fun toggleOnlyWithLyricsFilter() {
+        _onlyWithLyricsFilter.value = !_onlyWithLyricsFilter.value
+    }
+
+    fun openTrackLyricsSheet(track: MusicTrack) {
+        lyricsFetchJob?.cancel()
+        _activeLyricsTrack.value = track
+        if (track.lyrics.isNotBlank()) {
+            _isLoadingLyrics.value = false
+            return
+        }
+
+        _isLoadingLyrics.value = true
+        lyricsFetchJob = viewModelScope.launch {
+            val fetched = runCatching { trendingRepository.fetchLyricsForTrack(track) }
+                .getOrNull()
+                ?.trim()
+                .orEmpty()
+            _isLoadingLyrics.value = false
+            if (fetched.isNotBlank()) {
+                val updatedTrack = track.copy(lyrics = fetched)
+                if (_activeLyricsTrack.value?.id == track.id) {
+                    _activeLyricsTrack.value = updatedTrack
+                }
+                _trendingTracks.value = _trendingTracks.value.map {
+                    if (it.id == track.id) it.copy(lyrics = fetched) else it
+                }
+                _discoverTracks.value = _discoverTracks.value.map {
+                    if (it.id == track.id) it.copy(lyrics = fetched) else it
+                }
+                if (_playerState.value.currentTrack?.id == track.id) {
+                    _playerState.value = _playerState.value.copy(
+                        currentTrack = _playerState.value.currentTrack?.copy(lyrics = fetched)
+                    )
+                }
+            }
+        }
+    }
+
+    fun closeTrackLyricsSheet() {
+        lyricsFetchJob?.cancel()
+        _isLoadingLyrics.value = false
+        _activeLyricsTrack.value = null
+    }
+
     fun toggleTrackReaction(track: MusicTrack, reaction: TrackReactionType) {
         val repo = trackSocialRepository
         if (repo == null || !isCloudSocialActive()) {
@@ -1409,6 +1464,7 @@ class MusicPlayerViewModel(
         socialSummariesJob?.cancel()
         activeReactionsJob?.cancel()
         activeCommentsJob?.cancel()
+        lyricsFetchJob?.cancel()
         audioVoiceRecorder.cancelRecording()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null
