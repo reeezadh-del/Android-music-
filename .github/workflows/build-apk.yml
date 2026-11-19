@@ -38,25 +38,26 @@ jobs:
             echo "Warning: sdkmanager not found; relying on Gradle auto-download"
           fi
 
-      - name: Prepare debug keystore
+      - name: Restore and verify original debug keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+          DEBUG_KEYSTORE_PASSWORD: ${{ secrets.DEBUG_KEYSTORE_PASSWORD }}
         run: |
-          if [ ! -s debug.keystore ]; then
-            if [ -s debug.keystore.base64 ]; then
-              tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore || rm -f debug.keystore
-            fi
+          set -euo pipefail
+          if [ -z "$DEBUG_KEYSTORE_BASE64" ] || [ -z "$DEBUG_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Missing keystore secrets"
+            exit 1
           fi
-          if [ ! -s debug.keystore ]; then
-            rm -f debug.keystore
-            keytool -genkeypair -v \
-              -keystore debug.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+          printf '%s' "$DEBUG_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > debug.keystore
+          keytool -list -v -keystore debug.keystore -storepass "$DEBUG_KEYSTORE_PASSWORD" > /tmp/keystore-info.txt
+          ACTUAL_SHA1="$(awk -F': ' '/SHA1:/{print toupper($2); exit}' /tmp/keystore-info.txt)"
+          EXPECTED_SHA1="71:15:37:41:1F:7C:E2:DD:07:50:81:4C:33:C4:BF:70:3E:CF:CB:32"
+          echo "Debug keystore SHA-1: $ACTUAL_SHA1"
+          if [ "$ACTUAL_SHA1" != "$EXPECTED_SHA1" ]; then
+            echo "::error::SHA-1 mismatch"
+            exit 1
           fi
+          echo "Original debug keystore verified."
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
