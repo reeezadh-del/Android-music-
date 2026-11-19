@@ -426,4 +426,37 @@ class ExampleRobolectricTest {
         assertFalse(com.example.player.SpeedVolumeService.isServiceRunning)
         assertEquals(9, audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
     }
+
+    @Test
+    fun `google session helper detects sha1 mismatch and formats cancellation diagnostics`() {
+        val expectedSha1 = "711537411f7ce2dd0750814c33c4bf703ecfcb32"
+        val mismatchSha1 = "aabbccddeeff00112233445566778899aabbccdd"
+
+        assertEquals(
+            "71:15:37:41:1F:7C:E2:DD:07:50:81:4C:33:C4:BF:70:3E:CF:CB:32",
+            com.example.auth.GoogleSessionHelper.formatSha1WithColons(expectedSha1)
+        )
+        assertTrue(com.example.auth.GoogleSessionHelper.isExpectedDebugSha1(expectedSha1))
+        assertFalse(com.example.auth.GoogleSessionHelper.isExpectedDebugSha1(mismatchSha1))
+
+        val mismatchMessage = com.example.auth.GoogleSessionHelper.buildCancellationErrorMessage(
+            rawErrorMessage = "Activity is cancelled by the user.",
+            runtimeSha1Hex = mismatchSha1
+        )
+        assertTrue(mismatchMessage.contains("SHA-1"))
+        assertTrue(mismatchMessage.contains("AA:BB:CC:DD"))
+
+        val validSha1GmsDetail = com.example.auth.GoogleSessionHelper.buildCancellationErrorMessage(
+            rawErrorMessage = "16: Cannot find a matching credential",
+            runtimeSha1Hex = expectedSha1
+        )
+        assertTrue(validSha1GmsDetail.contains("16: Cannot find a matching credential"))
+        assertTrue(validSha1GmsDetail.contains("روش جایگزین"))
+
+        val validSha1GenericCancel = com.example.auth.GoogleSessionHelper.buildCancellationErrorMessage(
+            rawErrorMessage = "Activity is cancelled by the user.",
+            runtimeSha1Hex = expectedSha1
+        )
+        assertTrue(validSha1GenericCancel.contains("روش جایگزین"))
+    }
 }

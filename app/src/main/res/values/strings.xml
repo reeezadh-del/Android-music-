@@ -145,4 +145,5 @@
     <string name="social_guest_notice">برای ثبت ری‌اکت و ارسال نظر، لطفاً با حساب گوگل خود وارد شوید.</string>
     <string name="social_guest_signin_cta">ورود با گوگل برای ری‌اکت و نظر</string>
     <string name="social_open_comments">نظرات</string>
+    <string name="auth_google_fallback_sign_in">تلاش با روش جایگزین گوگل</string>
 </resources>

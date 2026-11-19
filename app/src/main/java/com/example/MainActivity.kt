@@ -304,6 +304,23 @@ fun AvaAuthRoot() {
     var isAuthBusy by remember { mutableStateOf(false) }
     var authStatusLabel by remember { mutableStateOf<String?>(null) }
     var authError by remember { mutableStateOf<String?>(null) }
+    var showFallbackGoogleSignIn by remember { mutableStateOf(false) }
+
+    val legacyGoogleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { activityResult ->
+        val act = activity ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            isAuthBusy = true
+            authStatusLabel = "در حال تکمیل ورود با گوگل…"
+            val res = GoogleSessionHelper.completeLegacyGoogleSignIn(act, activityResult.data)
+            res.onFailure { err ->
+                authError = err.localizedMessage ?: "ورود با گوگل انجام نشد."
+            }
+            isAuthBusy = false
+            authStatusLabel = null
+        }
+    }
 
     var usernameInput by rememberSaveable { mutableStateOf("") }
     var usernameFormatError by remember { mutableStateOf<String?>(null) }
@@ -483,19 +500,43 @@ fun AvaAuthRoot() {
                 scope.launch {
                     isAuthBusy = true
                     authError = null
+                    showFallbackGoogleSignIn = false
                     authStatusLabel = "در حال اتصال به حساب گوگل…"
                     val signInResult = GoogleSessionHelper.signInInteractiveWithGoogle(act)
                     signInResult.onFailure { err ->
                         authError = err.localizedMessage ?: "ورود با گوگل انجام نشد."
+                        showFallbackGoogleSignIn = true
                     }
                     isAuthBusy = false
                     authStatusLabel = null
+                }
+            },
+            showFallbackSignIn = showFallbackGoogleSignIn,
+            onFallbackGoogleSignInClick = {
+                val act = activity ?: return@AuthGateScreen
+                scope.launch {
+                    isAuthBusy = true
+                    authError = null
+                    authStatusLabel = "در حال باز کردن روش جایگزین گوگل…"
+                    val intentRes = GoogleSessionHelper.buildLegacyGoogleSignInIntentSender(act)
+                    intentRes.onSuccess { pendingIntent ->
+                        isAuthBusy = false
+                        authStatusLabel = null
+                        legacyGoogleSignInLauncher.launch(
+                            IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                        )
+                    }.onFailure { err ->
+                        authError = err.localizedMessage ?: "سرویس جایگزین ورود گوگل در دسترس نیست."
+                        isAuthBusy = false
+                        authStatusLabel = null
+                    }
                 }
             },
             onGuestSignInClick = {
                 isAuthBusy = false
                 authStatusLabel = null
                 authError = null
+                showFallbackGoogleSignIn = false
                 scope.launch { app.preferences.setGuestMode(true) }
             },
             onUsernameChange = {},

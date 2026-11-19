@@ -98,6 +98,8 @@ fun AuthGateScreen(
     onSwitchGoogleAccount: () -> Unit,
     diagnosticCount: Int = 0,
     onOpenDiagnostics: () -> Unit = {},
+    showFallbackSignIn: Boolean = false,
+    onFallbackGoogleSignInClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
@@ -252,6 +254,26 @@ fun AuthGateScreen(
                                         text = stringResource(R.string.auth_google_sign_in),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            if (showFallbackSignIn && onFallbackGoogleSignInClick != null) {
+                                OutlinedButton(
+                                    onClick = onFallbackGoogleSignInClick,
+                                    enabled = !isBusy,
+                                    shape = RoundedCornerShape(18.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(50.dp)
+                                        .testTag("fallback_google_sign_in_button")
+                                ) {
+                                    Icon(Icons.AutoMirrored.Rounded.Login, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = stringResource(R.string.auth_google_fallback_sign_in),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
                             }
