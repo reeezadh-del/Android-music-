@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,6 +25,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,14 +51,19 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AlternateEmail
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PersonOutline
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material3.Button
@@ -76,6 +83,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -115,6 +123,7 @@ import com.example.diagnostics.DiagnosticLogRepository
 import com.example.diagnostics.configureAppCheck
 import com.example.drive.DriveDbSnapshot
 import com.example.player.AppTab
+import com.example.player.AppThemeMode
 import com.example.player.AutoSpeedVolumeManager
 import com.example.player.FavoriteTracksRepository
 import com.example.player.OnlineSubSection
@@ -131,10 +140,12 @@ import com.example.ui.components.AvaSearchField
 import com.example.ui.components.CrashReportDialog
 import com.example.ui.components.DiagnosticsHistoryDialog
 import com.example.ui.components.DrivingModeOverlay
+import com.example.ui.components.EditorialAlbumsCarousel
+import com.example.ui.components.EditorialHeroSpotlightBanner
+import com.example.ui.components.EditorialPageHeader
+import com.example.ui.components.EditorialSectionHeader
 import com.example.ui.components.FullNowPlayingSheet
 import com.example.ui.components.MiniPlayerBar
-import com.example.ui.components.StudioHeroBanner
-import com.example.ui.components.TrackLyricsBottomSheet
 import com.example.ui.components.TrackRowItem
 import com.example.ui.components.TrackSocialBottomSheet
 import com.example.ui.screens.AuthGateScreen
@@ -156,9 +167,34 @@ class MainActivity : ComponentActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
         configureAppCheck(this, intent)
         enableEdgeToEdge()
+        val app = application as AvaMusicApplication
         setContent {
-            AvaPlayerTheme(darkTheme = true) {
-                AvaAuthRoot()
+            val rootPrefs by app.preferences.prefsFlow.collectAsStateWithLifecycle(
+                initialValue = StoredMusicPrefs()
+            )
+            val isSystemDark = isSystemInDarkTheme()
+            val useDarkTheme = when (rootPrefs.themeMode) {
+                AppThemeMode.DARK -> true
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.SYSTEM -> isSystemDark
+            }
+            LaunchedEffect(useDarkTheme) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT
+                    ) { useDarkTheme },
+                    navigationBarStyle = SystemBarStyle.auto(
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT
+                    ) { useDarkTheme }
+                )
+            }
+            AvaPlayerTheme(darkTheme = useDarkTheme) {
+                AvaAuthRoot(
+                    themeMode = rootPrefs.themeMode,
+                    useDarkTheme = useDarkTheme
+                )
             }
         }
     }
@@ -184,7 +220,10 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 @Composable
-fun AvaAuthRoot() {
+fun AvaAuthRoot(
+    themeMode: AppThemeMode = AppThemeMode.LIGHT,
+    useDarkTheme: Boolean = false
+) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val app = remember(context) { context.applicationContext as AvaMusicApplication }
@@ -226,7 +265,9 @@ fun AvaAuthRoot() {
                                 currentUserId = "guest",
                                 autoSpeedVolumeManager = application.autoSpeedVolumeManager,
                                 favoriteTracksRepository = null,
-                                trackSocialRepository = null
+                                trackSocialRepository = null,
+                                youTubeMusicRepository = application.youTubeMusicRepository,
+                                trackDownloadManager = application.trackDownloadManager
                             )
                         }
                     }
@@ -246,6 +287,8 @@ fun AvaAuthRoot() {
                     userEmail = "",
                     isDriveAuthorized = false,
                     isGuestMode = true,
+                    themeMode = themeMode,
+                    useDarkTheme = useDarkTheme,
                     onUpgradeToGoogle = {
                         scope.launch { app.preferences.setGuestMode(false) }
                     },
@@ -754,7 +797,9 @@ fun AvaAuthRoot() {
                                     currentUserId = user.uid,
                                     autoSpeedVolumeManager = application.autoSpeedVolumeManager,
                                     favoriteTracksRepository = FavoriteTracksRepository(application),
-                                    trackSocialRepository = TrackSocialRepository(application)
+                                    trackSocialRepository = TrackSocialRepository(application),
+                                    youTubeMusicRepository = application.youTubeMusicRepository,
+                                    trackDownloadManager = application.trackDownloadManager
                                 )
                             }
                         }
@@ -792,6 +837,8 @@ fun AvaAuthRoot() {
                         userEmail = userEmail,
                         isDriveAuthorized = !driveAccessToken.isNullOrBlank(),
                         isGuestMode = false,
+                        themeMode = themeMode,
+                        useDarkTheme = useDarkTheme,
                         onUpgradeToGoogle = {},
                         diagnosticCount = diagnosticLogs.size,
                         onOpenDiagnostics = { isDiagnosticsDialogOpen = true },
@@ -863,6 +910,8 @@ fun SimpleMusicPlayerScreen(
     userEmail: String,
     isDriveAuthorized: Boolean,
     isGuestMode: Boolean = false,
+    themeMode: AppThemeMode = AppThemeMode.LIGHT,
+    useDarkTheme: Boolean = false,
     onUpgradeToGoogle: () -> Unit = {},
     diagnosticCount: Int,
     onOpenDiagnostics: () -> Unit,
@@ -897,6 +946,14 @@ fun SimpleMusicPlayerScreen(
     val isLoadingDiscover by viewModel.isLoadingDiscover.collectAsStateWithLifecycle()
     val discoverError by viewModel.discoverError.collectAsStateWithLifecycle()
 
+    val youtubeTracks by viewModel.youtubeTracks.collectAsStateWithLifecycle()
+    val youtubeCategory by viewModel.youtubeCategory.collectAsStateWithLifecycle()
+    val youtubeSearchQuery by viewModel.youtubeSearchQuery.collectAsStateWithLifecycle()
+    val isLoadingYoutube by viewModel.isLoadingYoutube.collectAsStateWithLifecycle()
+    val youtubeError by viewModel.youtubeError.collectAsStateWithLifecycle()
+    val resolvingYoutubeTrackId by viewModel.resolvingYoutubeTrackId.collectAsStateWithLifecycle()
+    val downloadStates by viewModel.downloadStates.collectAsStateWithLifecycle()
+
     val trackSocialSummaries by viewModel.trackSocialSummaries.collectAsStateWithLifecycle()
     val activeSocialTrack by viewModel.activeSocialTrack.collectAsStateWithLifecycle()
     val activeTrackSummary by viewModel.activeTrackSummary.collectAsStateWithLifecycle()
@@ -904,9 +961,6 @@ fun SimpleMusicPlayerScreen(
     val isLoadingComments by viewModel.isLoadingComments.collectAsStateWithLifecycle()
     val isSubmittingComment by viewModel.isSubmittingComment.collectAsStateWithLifecycle()
     val commentsError by viewModel.commentsError.collectAsStateWithLifecycle()
-    val onlyWithLyricsFilter by viewModel.onlyWithLyricsFilter.collectAsStateWithLifecycle()
-    val activeLyricsTrack by viewModel.activeLyricsTrack.collectAsStateWithLifecycle()
-    val isLoadingLyrics by viewModel.isLoadingLyrics.collectAsStateWithLifecycle()
 
     val isSyncingDrive by viewModel.isSyncingDrive.collectAsStateWithLifecycle()
     val driveSyncMessage by viewModel.driveSyncMessage.collectAsStateWithLifecycle()
@@ -1086,9 +1140,6 @@ fun SimpleMusicPlayerScreen(
         (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
-    val primaryGlow = MaterialTheme.colorScheme.primary
-    val tertiaryGlow = MaterialTheme.colorScheme.tertiary
-
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -1104,21 +1155,22 @@ fun SimpleMusicPlayerScreen(
                             onExpand = { isNowPlayingOpen = true },
                             onTogglePlayPause = viewModel::togglePlayPause,
                             onSkipNext = viewModel::skipNext,
+                            onSkipPrevious = viewModel::skipPrevious,
                             applyNavigationBarPadding = false
                         )
                     }
                     HorizontalDivider(
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                        thickness = 0.8.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
                     )
                     NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        containerColor = MaterialTheme.colorScheme.background,
                         tonalElevation = 0.dp
                     ) {
                         val navItemColors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
                             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1172,22 +1224,7 @@ fun SimpleMusicPlayerScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .drawBehind {
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(primaryGlow.copy(alpha = 0.11f), Color.Transparent),
-                                center = Offset(size.width * 0.85f, size.height * 0.08f),
-                                radius = size.maxDimension * 0.48f
-                            )
-                        )
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(tertiaryGlow.copy(alpha = 0.08f), Color.Transparent),
-                                center = Offset(size.width * 0.12f, size.height * 0.55f),
-                                radius = size.maxDimension * 0.42f
-                            )
-                        )
-                    }
+                    .background(MaterialTheme.colorScheme.background)
                     .padding(innerPadding),
                 contentAlignment = Alignment.TopCenter
             ) {
@@ -1201,166 +1238,94 @@ fun SimpleMusicPlayerScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(horizontal = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    .padding(horizontal = 18.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                // Studio Hero Banner Header with @username + Quick Library Actions
-                                StudioHeroBanner(
-                                    modifier = Modifier.padding(top = 8.dp),
-                                    accentColor = MaterialTheme.colorScheme.primary
+                                EditorialPageHeader(
+                                    title = stringResource(R.string.editorial_music_heading),
+                                    subtitle = "${allTracks.size} آهنگ",
+                                    modifier = Modifier.padding(top = 10.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .border(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.outlineVariant,
+                                                CircleShape
+                                            )
+                                    ) {
+                                        IconButton(
+                                            onClick = { viewModel.toggleDayNightTheme(useDarkTheme) },
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .testTag("theme_toggle_button")
+                                        ) {
+                                            Icon(
+                                                imageVector = if (useDarkTheme) {
+                                                    Icons.Rounded.LightMode
+                                                } else {
+                                                    Icons.Rounded.DarkMode
+                                                },
+                                                contentDescription = stringResource(
+                                                    if (useDarkTheme) {
+                                                        R.string.theme_toggle_to_light
+                                                    } else {
+                                                        R.string.theme_toggle_to_dark
+                                                    }
+                                                ),
+                                                tint = MaterialTheme.colorScheme.onBackground,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        onClick = { isAccountDialogOpen = true },
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier
+                                            .height(44.dp)
+                                            .testTag("account_profile_button")
                                     ) {
                                         Row(
-                                            modifier = Modifier.weight(1f),
+                                            modifier = Modifier.padding(horizontal = 12.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(44.dp)
-                                                    .clip(RoundedCornerShape(14.dp))
-                                                    .background(
-                                                        Brush.linearGradient(
-                                                            listOf(
-                                                                MaterialTheme.colorScheme.primary,
-                                                                MaterialTheme.colorScheme.secondary
-                                                            )
-                                                        )
-                                                    ),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.MusicNote,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onPrimary
-                                                )
-                                            }
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = stringResource(R.string.music_player_title),
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = "${allTracks.size} آهنگ در کتابخانه",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Surface(
-                                                onClick = { isAccountDialogOpen = true },
-                                                shape = RoundedCornerShape(14.dp),
-                                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.88f),
-                                                modifier = Modifier
-                                                    .height(40.dp)
-                                                    .border(
-                                                        1.dp,
-                                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-                                                        RoundedCornerShape(14.dp)
+                                            Icon(
+                                                imageVector = if (isGuestMode) {
+                                                    Icons.Rounded.PersonOutline
+                                                } else {
+                                                    Icons.Rounded.AlternateEmail
+                                                },
+                                                contentDescription = "حساب کاربری",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = userAccount.username,
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (!isGuestMode) {
+                                                if (isSyncingDrive) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(13.dp),
+                                                        strokeWidth = 2.dp,
+                                                        color = MaterialTheme.colorScheme.onPrimary
                                                     )
-                                                    .testTag("account_profile_button")
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 10.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                ) {
+                                                } else {
                                                     Icon(
-                                                        imageVector = if (isGuestMode) {
-                                                            Icons.Rounded.PersonOutline
+                                                        imageVector = if (isDriveAuthorized) {
+                                                            Icons.Rounded.CloudDone
                                                         } else {
-                                                            Icons.Rounded.AlternateEmail
+                                                            Icons.Rounded.CloudOff
                                                         },
-                                                        contentDescription = "حساب کاربری",
-                                                        tint = MaterialTheme.colorScheme.primary,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                    Text(
-                                                        text = userAccount.username,
-                                                        style = MaterialTheme.typography.labelLarge,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                    if (!isGuestMode) {
-                                                        if (isSyncingDrive) {
-                                                            CircularProgressIndicator(
-                                                                modifier = Modifier.size(14.dp),
-                                                                strokeWidth = 2.dp
-                                                            )
-                                                        } else {
-                                                            Icon(
-                                                                imageVector = if (isDriveAuthorized) {
-                                                                    Icons.Rounded.CloudDone
-                                                                } else {
-                                                                    Icons.Rounded.CloudOff
-                                                                },
-                                                                contentDescription = null,
-                                                                tint = if (isDriveAuthorized) {
-                                                                    MaterialTheme.colorScheme.tertiary
-                                                                } else {
-                                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                                },
-                                                                modifier = Modifier.size(16.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
-                                                modifier = Modifier.size(48.dp)
-                                            ) {
-                                                IconButton(
-                                                    onClick = triggerScan,
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .testTag("scan_music_button")
-                                                ) {
-                                                    if (isScanning) {
-                                                        CircularProgressIndicator(
-                                                            modifier = Modifier.size(18.dp),
-                                                            strokeWidth = 2.dp
-                                                        )
-                                                    } else {
-                                                        Icon(
-                                                            imageVector = Icons.Rounded.Refresh,
-                                                            contentDescription = stringResource(R.string.action_scan_music),
-                                                            modifier = Modifier.size(20.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
-                                                modifier = Modifier.size(48.dp)
-                                            ) {
-                                                IconButton(
-                                                    onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .testTag("add_audio_button")
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Add,
-                                                        contentDescription = stringResource(R.string.action_add_files),
-                                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                        modifier = Modifier.size(20.dp)
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(15.dp)
                                                     )
                                                 }
                                             }
@@ -1368,7 +1333,6 @@ fun SimpleMusicPlayerScreen(
                                     }
                                 }
 
-                                // Sleek Pill Search Bar
                                 AvaSearchField(
                                     value = searchQuery,
                                     onValueChange = viewModel::setSearchQuery,
@@ -1379,90 +1343,149 @@ fun SimpleMusicPlayerScreen(
                                     voiceTestTag = "voice_search_library_button"
                                 )
 
-                                // Styled Filter Chips + Android Auto Speed Volume Trigger
+                                // Styled Minimalist Filter Chips + Scan & Add Triggers
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    TrackFilter.entries.forEach { filter ->
-                                        val selected = activeFilter == filter
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        TrackFilter.entries.forEach { filter ->
+                                            val selected = activeFilter == filter
+                                            FilterChip(
+                                                selected = selected,
+                                                onClick = { viewModel.setFilter(filter) },
+                                                label = { Text(filter.labelFa) },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = when (filter) {
+                                                            TrackFilter.ALL -> Icons.Rounded.LibraryMusic
+                                                            TrackFilter.FAVORITES -> Icons.Rounded.Favorite
+                                                            TrackFilter.DOWNLOADED -> Icons.Rounded.DownloadDone
+                                                        },
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                },
+                                                shape = RoundedCornerShape(50),
+                                                colors = FilterChipDefaults.filterChipColors(
+                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                                    selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+                                                ),
+                                                modifier = Modifier.testTag("filter_${filter.name}")
+                                            )
+                                        }
+
                                         FilterChip(
-                                            selected = selected,
-                                            onClick = { viewModel.setFilter(filter) },
-                                            label = { Text(filter.labelFa) },
+                                            selected = isDrivingModeOpen,
+                                            onClick = {
+                                                viewModel.syncSpeedVolumeBackgroundService()
+                                                isDrivingModeOpen = true
+                                            },
+                                            label = { Text(stringResource(R.string.driving_mode_button)) },
                                             leadingIcon = {
                                                 Icon(
-                                                    imageVector = if (filter == TrackFilter.FAVORITES) {
-                                                        Icons.Rounded.Favorite
-                                                    } else {
-                                                        Icons.Rounded.LibraryMusic
-                                                    },
+                                                    imageVector = Icons.Rounded.Speed,
                                                     contentDescription = null,
-                                                    modifier = Modifier.size(16.dp)
+                                                    modifier = Modifier.size(15.dp)
                                                 )
                                             },
-                                            shape = RoundedCornerShape(14.dp),
+                                            shape = RoundedCornerShape(50),
                                             colors = FilterChipDefaults.filterChipColors(
                                                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                                                selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
                                             ),
-                                            modifier = Modifier.testTag("filter_${filter.name}")
+                                            modifier = Modifier.testTag("driving_mode_button")
+                                        )
+
+                                        FilterChip(
+                                            selected = autoSpeedVolumeState.isActiveForDriving &&
+                                                autoSpeedVolumeState.hasLocationPermission,
+                                            onClick = {
+                                                viewModel.refreshAutoSpeedPermission()
+                                                isAutoSpeedDialogOpen = true
+                                            },
+                                            label = { Text(stringResource(R.string.auto_speed_volume_chip)) },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.DirectionsCar,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(50),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                                selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
+                                            ),
+                                            modifier = Modifier.testTag("auto_speed_volume_button")
                                         )
                                     }
 
-                                    FilterChip(
-                                        selected = isDrivingModeOpen,
-                                        onClick = {
-                                            viewModel.syncSpeedVolumeBackgroundService()
-                                            isDrivingModeOpen = true
-                                        },
-                                        label = { Text(stringResource(R.string.driving_mode_button)) },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Speed,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp)
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .border(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.outlineVariant,
+                                                CircleShape
                                             )
-                                        },
-                                        shape = RoundedCornerShape(14.dp),
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                            selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
-                                        ),
-                                        modifier = Modifier.testTag("driving_mode_button")
-                                    )
+                                    ) {
+                                        IconButton(
+                                            onClick = triggerScan,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .testTag("scan_music_button")
+                                        ) {
+                                            if (isScanning) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(18.dp),
+                                                    strokeWidth = 2.dp
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Refresh,
+                                                    contentDescription = stringResource(R.string.action_scan_music),
+                                                    tint = MaterialTheme.colorScheme.onBackground,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
 
-                                    FilterChip(
-                                        selected = autoSpeedVolumeState.isActiveForDriving &&
-                                            autoSpeedVolumeState.hasLocationPermission,
-                                        onClick = {
-                                            viewModel.refreshAutoSpeedPermission()
-                                            isAutoSpeedDialogOpen = true
-                                        },
-                                        label = { Text(stringResource(R.string.auto_speed_volume_chip)) },
-                                        leadingIcon = {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        IconButton(
+                                            onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .testTag("add_audio_button")
+                                        ) {
                                             Icon(
-                                                imageVector = Icons.Rounded.DirectionsCar,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp)
+                                                imageVector = Icons.Rounded.Add,
+                                                contentDescription = stringResource(R.string.action_add_files),
+                                                modifier = Modifier.size(20.dp)
                                             )
-                                        },
-                                        shape = RoundedCornerShape(14.dp),
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                            selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
-                                        ),
-                                        modifier = Modifier.testTag("auto_speed_volume_button")
-                                    )
+                                        }
+                                    }
                                 }
 
                                 // Song List or Empty State
@@ -1474,15 +1497,15 @@ fun SimpleMusicPlayerScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Surface(
-                                            shape = RoundedCornerShape(26.dp),
+                                            shape = RoundedCornerShape(24.dp),
                                             color = MaterialTheme.colorScheme.surfaceContainerLow,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(vertical = 16.dp)
+                                                .padding(vertical = 12.dp)
                                                 .border(
                                                     1.dp,
-                                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                                                    RoundedCornerShape(26.dp)
+                                                    MaterialTheme.colorScheme.outlineVariant,
+                                                    RoundedCornerShape(24.dp)
                                                 )
                                         ) {
                                             Column(
@@ -1494,35 +1517,39 @@ fun SimpleMusicPlayerScreen(
                                                     modifier = Modifier
                                                         .size(64.dp)
                                                         .clip(RoundedCornerShape(20.dp))
-                                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
+                                                        .background(MaterialTheme.colorScheme.primaryContainer),
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     Icon(
-                                                        imageVector = if (activeFilter == TrackFilter.FAVORITES) {
-                                                            Icons.Rounded.Favorite
-                                                        } else {
-                                                            Icons.Rounded.MusicNote
+                                                        imageVector = when (activeFilter) {
+                                                            TrackFilter.FAVORITES -> Icons.Rounded.Favorite
+                                                            TrackFilter.DOWNLOADED -> Icons.Rounded.DownloadDone
+                                                            TrackFilter.ALL -> Icons.Rounded.MusicNote
                                                         },
                                                         contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.primary,
-                                                        modifier = Modifier.size(34.dp)
+                                                        tint = when (activeFilter) {
+                                                            TrackFilter.FAVORITES -> MaterialTheme.colorScheme.secondary
+                                                            TrackFilter.DOWNLOADED -> MaterialTheme.colorScheme.tertiary
+                                                            TrackFilter.ALL -> MaterialTheme.colorScheme.primary
+                                                        },
+                                                        modifier = Modifier.size(32.dp)
                                                     )
                                                 }
                                                 Text(
-                                                    text = if (activeFilter == TrackFilter.FAVORITES) {
-                                                        stringResource(R.string.empty_favorites_title)
-                                                    } else {
-                                                        stringResource(R.string.empty_title)
+                                                    text = when (activeFilter) {
+                                                        TrackFilter.FAVORITES -> stringResource(R.string.empty_favorites_title)
+                                                        TrackFilter.DOWNLOADED -> stringResource(R.string.empty_downloaded_title)
+                                                        TrackFilter.ALL -> stringResource(R.string.empty_title)
                                                     },
                                                     style = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.Bold,
                                                     textAlign = TextAlign.Center
                                                 )
                                                 Text(
-                                                    text = if (activeFilter == TrackFilter.FAVORITES) {
-                                                        stringResource(R.string.empty_favorites_subtitle)
-                                                    } else {
-                                                        stringResource(R.string.empty_subtitle)
+                                                    text = when (activeFilter) {
+                                                        TrackFilter.FAVORITES -> stringResource(R.string.empty_favorites_subtitle)
+                                                        TrackFilter.DOWNLOADED -> stringResource(R.string.empty_downloaded_subtitle)
+                                                        TrackFilter.ALL -> stringResource(R.string.empty_subtitle)
                                                     },
                                                     style = MaterialTheme.typography.bodyMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1533,7 +1560,7 @@ fun SimpleMusicPlayerScreen(
                                                     Spacer(modifier = Modifier.height(4.dp))
                                                     Button(
                                                         onClick = triggerScan,
-                                                        shape = RoundedCornerShape(14.dp),
+                                                        shape = RoundedCornerShape(16.dp),
                                                         modifier = Modifier
                                                             .fillMaxWidth()
                                                             .height(48.dp)
@@ -1545,7 +1572,7 @@ fun SimpleMusicPlayerScreen(
                                                     }
                                                     OutlinedButton(
                                                         onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
-                                                        shape = RoundedCornerShape(14.dp),
+                                                        shape = RoundedCornerShape(16.dp),
                                                         modifier = Modifier
                                                             .fillMaxWidth()
                                                             .height(48.dp)
@@ -1560,11 +1587,70 @@ fun SimpleMusicPlayerScreen(
                                         }
                                     }
                                 } else {
+                                    val spotlightTrack = activeTrack ?: tracks.first()
                                     LazyColumn(
                                         modifier = Modifier.weight(1f),
                                         contentPadding = PaddingValues(bottom = 24.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
+                                        item(key = "library_hero_banner") {
+                                            EditorialHeroSpotlightBanner(
+                                                featuredTrack = spotlightTrack,
+                                                isCurrent = activeTrack?.id == spotlightTrack.id,
+                                                isPlaying = playerState.isPlaying,
+                                                onClick = { viewModel.playTrack(spotlightTrack) }
+                                            )
+                                        }
+
+                                        item(key = "library_new_albums_header") {
+                                            EditorialSectionHeader(
+                                                title = stringResource(R.string.editorial_new_albums_heading),
+                                                trailingContent = {
+                                                    TextButton(
+                                                        onClick = { viewModel.playAllLibrary(shuffle = false) },
+                                                        modifier = Modifier.testTag("library_play_all_button")
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.PlayArrow,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(3.dp))
+                                                        Text(stringResource(R.string.library_play_all))
+                                                    }
+                                                    TextButton(
+                                                        onClick = { viewModel.playAllLibrary(shuffle = true) },
+                                                        modifier = Modifier.testTag("library_shuffle_play_button")
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Shuffle,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(15.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(3.dp))
+                                                        Text(stringResource(R.string.library_shuffle_play))
+                                                    }
+                                                }
+                                            )
+                                        }
+
+                                        item(key = "library_albums_carousel") {
+                                            EditorialAlbumsCarousel(
+                                                tracks = tracks,
+                                                currentTrackId = activeTrack?.id,
+                                                isPlaying = playerState.isPlaying,
+                                                onTrackClick = { viewModel.playTrack(it) }
+                                            )
+                                        }
+
+                                        item(key = "library_song_list_header") {
+                                            EditorialSectionHeader(
+                                                title = stringResource(R.string.editorial_song_list_heading),
+                                                actionLabel = "${tracks.size} قطعه • ${activeFilter.labelFa}",
+                                                onActionClick = { viewModel.playAllLibrary(shuffle = false) }
+                                            )
+                                        }
+
                                         items(tracks, key = { it.id }) { track ->
                                             TrackRowItem(
                                                 track = track,
@@ -1574,6 +1660,9 @@ fun SimpleMusicPlayerScreen(
                                                 onToggleFavorite = { viewModel.toggleFavorite(track) },
                                                 onRemoveImported = if (track.isImported) {
                                                     { viewModel.removeImportedTrack(track) }
+                                                } else null,
+                                                onRemoveDownloaded = if (track.isDownloaded) {
+                                                    { viewModel.deleteDownloadedTrack(track) }
                                                 } else null
                                             )
                                         }
@@ -1596,7 +1685,9 @@ fun SimpleMusicPlayerScreen(
                                 onShuffleAll = { viewModel.playAllFavorites(shuffle = true) },
                                 onRemoveFavorite = viewModel::toggleFavorite,
                                 onRetryCloud = viewModel::retryCloudFavorites,
-                                onUpgradeToGoogle = onUpgradeToGoogle
+                                onUpgradeToGoogle = onUpgradeToGoogle,
+                                downloadStates = downloadStates,
+                                onDownloadTrack = viewModel::downloadTrack
                             )
                         }
 
@@ -1628,16 +1719,29 @@ fun SimpleMusicPlayerScreen(
                                 onClearDiscoverSearch = viewModel::clearDiscoverSearch,
                                 onRefreshDiscover = { viewModel.loadDiscoverTracks(forceRefresh = true) },
                                 onPlayDiscoverTrack = viewModel::playDiscoverTrack,
-                                onlyWithLyrics = onlyWithLyricsFilter,
-                                onToggleOnlyWithLyrics = viewModel::toggleOnlyWithLyricsFilter,
-                                onOpenLyrics = viewModel::openTrackLyricsSheet,
+                                youtubeTracks = youtubeTracks,
+                                selectedYoutubeCategory = youtubeCategory,
+                                youtubeSearchQuery = youtubeSearchQuery,
+                                isLoadingYoutube = isLoadingYoutube,
+                                youtubeError = youtubeError,
+                                resolvingYoutubeTrackId = resolvingYoutubeTrackId,
+                                onSelectYoutubeCategory = viewModel::setYoutubeCategory,
+                                onYoutubeSearchQueryChange = viewModel::setYoutubeSearchQuery,
+                                onSubmitYoutubeSearch = viewModel::submitYoutubeSearch,
+                                onClearYoutubeSearch = viewModel::clearYoutubeSearch,
+                                onRefreshYoutube = { viewModel.loadYoutubeTracks(forceRefresh = true) },
+                                onPlayYoutubeTrack = viewModel::playYoutubeTrack,
                                 currentTrackId = activeTrack?.id,
                                 isPlaying = playerState.isPlaying,
                                 socialSummaries = trackSocialSummaries,
                                 onVoiceSearchClick = { launchVoiceSearch(AppTab.ONLINE) },
                                 onToggleFavorite = viewModel::toggleFavorite,
                                 onToggleReaction = viewModel::toggleTrackReaction,
-                                onOpenComments = viewModel::openTrackSocialSheet
+                                onOpenComments = viewModel::openTrackSocialSheet,
+                                isDarkTheme = useDarkTheme,
+                                onToggleTheme = { viewModel.toggleDayNightTheme(useDarkTheme) },
+                                downloadStates = downloadStates,
+                                onDownloadTrack = viewModel::downloadTrack
                             )
                         }
                     }
@@ -1676,6 +1780,8 @@ fun SimpleMusicPlayerScreen(
                 isSyncingDrive = isSyncingDrive,
                 driveSyncMessage = driveSyncMessage,
                 favoriteCount = favoriteCount,
+                themeMode = themeMode,
+                onSelectThemeMode = viewModel::setThemeMode,
                 isGuestMode = isGuestMode,
                 onUpgradeToGoogle = {
                     isAccountDialogOpen = false
@@ -1759,9 +1865,8 @@ fun SimpleMusicPlayerScreen(
                     onOpenComments = {
                         viewModel.openTrackSocialSheet(activeTrack)
                     },
-                    onOpenLyrics = if (activeTrack.lyrics.isNotBlank()) {
-                        { viewModel.openTrackLyricsSheet(activeTrack) }
-                    } else null
+                    downloadStatus = downloadStates[activeTrack.id],
+                    onDownloadClick = { viewModel.downloadTrack(activeTrack) }
                 )
             }
         }
@@ -1821,33 +1926,6 @@ fun SimpleMusicPlayerScreen(
                     onUpgradeToGoogle()
                 },
                 onDismiss = viewModel::closeTrackSocialSheet
-            )
-        }
-
-        val lyricsTrack = activeLyricsTrack
-        if (lyricsTrack != null) {
-            val isLyricsTrackPlaying = activeTrack?.id == lyricsTrack.id && playerState.isPlaying
-            TrackLyricsBottomSheet(
-                track = lyricsTrack,
-                isLoading = isLoadingLyrics,
-                isCurrentPlaying = isLyricsTrackPlaying,
-                onPlayOrToggle = {
-                    if (activeTrack?.id == lyricsTrack.id) {
-                        viewModel.togglePlayPause()
-                    } else if (onlineSubSection == OnlineSubSection.DISCOVER &&
-                        discoverTracks.any { it.id == lyricsTrack.id }
-                    ) {
-                        viewModel.playDiscoverTrack(lyricsTrack)
-                    } else {
-                        viewModel.playTrendingTrack(lyricsTrack)
-                    }
-                },
-                onToggleFavorite = { viewModel.toggleFavorite(lyricsTrack) },
-                onOpenComments = {
-                    viewModel.closeTrackLyricsSheet()
-                    viewModel.openTrackSocialSheet(lyricsTrack)
-                },
-                onDismiss = viewModel::closeTrackLyricsSheet
             )
         }
     }

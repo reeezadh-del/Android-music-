@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Shuffle
@@ -38,7 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,11 +49,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.player.MusicTrack
+import com.example.player.TrackDownloadStatus
 import com.example.ui.components.AlbumCoverImage
 import com.example.ui.components.AnimatedEqualizerBars
 import com.example.ui.components.AvaSearchField
-import com.example.ui.components.StudioHeroBanner
+import com.example.ui.components.EditorialPageHeader
+import com.example.ui.components.TrackDownloadButton
 import com.example.ui.components.formatDuration
+import com.example.ui.theme.OutfitFontFamily
 import com.example.ui.viewmodel.FavoritesUiState
 
 @Composable
@@ -69,7 +74,9 @@ fun FavoritesScreen(
     onRemoveFavorite: (MusicTrack) -> Unit,
     onRetryCloud: () -> Unit,
     onUpgradeToGoogle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    downloadStates: Map<String, TrackDownloadStatus> = emptyMap(),
+    onDownloadTrack: ((MusicTrack) -> Unit)? = null
 ) {
     val tracks: List<MusicTrack>
     val totalCount: Int
@@ -108,133 +115,83 @@ fun FavoritesScreen(
             .testTag("favorites_screen"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Studio Hero Header Card
-        StudioHeroBanner(
-            modifier = Modifier.padding(top = 8.dp),
-            accentColor = MaterialTheme.colorScheme.primary
+        EditorialPageHeader(
+            title = stringResource(R.string.favorites_screen_title),
+            subtitle = stringResource(R.string.favorites_count_format, totalCount),
+            modifier = Modifier.padding(top = 10.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant,
+                    RoundedCornerShape(50)
+                )
             ) {
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(
-                                        MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.colorScheme.secondary
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    if (isSyncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
                         Icon(
-                            imageVector = Icons.Rounded.Favorite,
+                            imageVector = if (isCloudBacked) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.favorites_screen_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = stringResource(R.string.favorites_count_format, totalCount),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
-                    modifier = Modifier.border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
-                        RoundedCornerShape(12.dp)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        if (isSyncing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (isCloudBacked) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff,
-                                contentDescription = null,
-                                tint = if (isCloudBacked) {
-                                    MaterialTheme.colorScheme.tertiary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        Text(
-                            text = when {
-                                isSyncing && isCloudBacked -> stringResource(R.string.favorites_cloud_syncing)
-                                isCloudBacked -> stringResource(R.string.favorites_cloud_synced)
-                                else -> stringResource(R.string.favorites_guest_local_badge)
+                            tint = if (isCloudBacked) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
                             },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface
+                            modifier = Modifier.size(15.dp)
                         )
                     }
+                    Text(
+                        text = when {
+                            isSyncing && isCloudBacked -> stringResource(R.string.favorites_cloud_syncing)
+                            isCloudBacked -> stringResource(R.string.favorites_cloud_synced)
+                            else -> stringResource(R.string.favorites_guest_local_badge)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
+        }
 
-            if (tracks.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+        if (tracks.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onPlayAll,
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("favorites_play_all_button")
                 ) {
-                    Button(
-                        onClick = onPlayAll,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .testTag("favorites_play_all_button")
-                    ) {
-                        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.favorites_play_all))
-                    }
-                    OutlinedButton(
-                        onClick = onShuffleAll,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .testTag("favorites_shuffle_all_button")
-                    ) {
-                        Icon(Icons.Rounded.Shuffle, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.favorites_shuffle_all))
-                    }
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(stringResource(R.string.favorites_play_all))
+                }
+                OutlinedButton(
+                    onClick = onShuffleAll,
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("favorites_shuffle_all_button")
+                ) {
+                    Icon(Icons.Rounded.Shuffle, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(stringResource(R.string.favorites_shuffle_all))
                 }
             }
         }
@@ -416,7 +373,11 @@ fun FavoritesScreen(
                             isCurrent = currentTrackId == track.id,
                             isPlaying = isPlaying,
                             onClick = { onPlayTrack(track) },
-                            onRemoveFavorite = { onRemoveFavorite(track) }
+                            onRemoveFavorite = { onRemoveFavorite(track) },
+                            downloadStatus = downloadStates[track.id],
+                            onDownloadClick = if (onDownloadTrack != null && (track.isOnline || track.isDownloaded)) {
+                                { onDownloadTrack(track) }
+                            } else null
                         )
                     }
                 }
@@ -432,28 +393,17 @@ private fun FavoriteTrackRowItem(
     isPlaying: Boolean,
     onClick: () -> Unit,
     onRemoveFavorite: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    downloadStatus: TrackDownloadStatus? = null,
+    onDownloadClick: (() -> Unit)? = null
 ) {
-    val shape = RoundedCornerShape(20.dp)
-    val borderBrush = if (isCurrent) {
-        Brush.linearGradient(
-            listOf(
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-                MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)
-            )
-        )
-    } else {
-        Brush.linearGradient(
-            listOf(
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-            )
-        )
-    }
+    val shape = RoundedCornerShape(18.dp)
+    val ink = MaterialTheme.colorScheme.primary
+    val crimson = MaterialTheme.colorScheme.secondary
     val containerColor = if (isCurrent) {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    } else {
         MaterialTheme.colorScheme.surfaceContainerLow
+    } else {
+        MaterialTheme.colorScheme.background
     }
 
     Row(
@@ -461,30 +411,22 @@ private fun FavoriteTrackRowItem(
             .fillMaxWidth()
             .clip(shape)
             .background(containerColor)
-            .border(if (isCurrent) 1.2.dp else 1.dp, borderBrush, shape)
+            .then(
+                if (isCurrent) {
+                    Modifier.border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+                        shape
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 10.dp, vertical = 9.dp)
             .testTag("favorite_row_${track.id}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (isCurrent) {
-            Box(
-                modifier = Modifier
-                    .width(3.5.dp)
-                    .height(38.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.secondary
-                            )
-                        )
-                    )
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-        }
-
         Box(contentAlignment = Alignment.Center) {
             AlbumCoverImage(
                 artworkUri = track.artworkUri,
@@ -492,9 +434,9 @@ private fun FavoriteTrackRowItem(
                 modifier = Modifier
                     .size(54.dp)
                     .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                        RoundedCornerShape(14.dp)
+                        width = if (isCurrent) 1.4.dp else 0.8.dp,
+                        color = if (isCurrent) crimson.copy(alpha = 0.8f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                        shape = RoundedCornerShape(14.dp)
                     ),
                 shape = RoundedCornerShape(14.dp)
             )
@@ -503,10 +445,10 @@ private fun FavoriteTrackRowItem(
                     modifier = Modifier
                         .size(54.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.62f)),
+                        .background(Color.Black.copy(alpha = 0.45f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    AnimatedEqualizerBars(barColor = MaterialTheme.colorScheme.primary)
+                    AnimatedEqualizerBars(barColor = Color.White, maxHeight = 16.dp)
                 }
             }
         }
@@ -521,78 +463,42 @@ private fun FavoriteTrackRowItem(
                 text = track.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
-                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Text(
-                text = if (track.durationMs > 0L) {
-                    "${track.artist} • ${formatDuration(track.durationMs)}"
-                } else {
-                    track.artist
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isCurrent) crimson else MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (track.isOnline) {
-                        MaterialTheme.colorScheme.tertiaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHighest
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        if (track.isOnline) {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(11.dp)
-                            )
-                        }
-                        Text(
-                            text = if (track.isOnline) {
-                                stringResource(R.string.favorites_source_online)
-                            } else {
-                                stringResource(R.string.favorites_source_local)
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (track.isOnline) {
-                                MaterialTheme.colorScheme.onTertiaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-                }
-
-                if (track.isRemix) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = stringResource(R.string.badge_remix),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
+                Text(
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (track.durationMs > 0L) {
+                    Text(
+                        text = "• ${formatDuration(track.durationMs)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = OutfitFontFamily,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                        maxLines = 1
+                    )
                 }
             }
+        }
+
+        if (onDownloadClick != null) {
+            TrackDownloadButton(
+                status = downloadStatus,
+                isDownloaded = track.isDownloaded,
+                onClick = onDownloadClick,
+                testTag = "favorites_download_btn_${track.id}"
+            )
         }
 
         IconButton(
@@ -604,8 +510,33 @@ private fun FavoriteTrackRowItem(
             Icon(
                 imageVector = Icons.Rounded.Favorite,
                 contentDescription = stringResource(R.string.favorites_remove_cd),
-                tint = MaterialTheme.colorScheme.primary
+                tint = crimson,
+                modifier = Modifier.size(20.dp)
             )
+        }
+
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (isCurrent) ink else MaterialTheme.colorScheme.surfaceContainerLow),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isCurrent && isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = if (isCurrent && isPlaying) {
+                        stringResource(R.string.cd_pause)
+                    } else {
+                        stringResource(R.string.cd_play)
+                    },
+                    tint = if (isCurrent) MaterialTheme.colorScheme.onPrimary else ink,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
         }
     }
 }

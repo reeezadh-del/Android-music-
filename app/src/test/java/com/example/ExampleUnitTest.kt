@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.player.AppThemeMode
 import com.example.player.IranianMusicSite
 import com.example.player.MusicTrack
 import com.example.player.RepeatModeOption
@@ -7,6 +8,8 @@ import com.example.player.TrackFilter
 import com.example.player.TrendingCategory
 import com.example.player.TrendingIranianRepository
 import com.example.player.TrendingPreset
+import com.example.player.YouTubeMusicCategory
+import com.example.player.YouTubeMusicRepository
 import com.example.ui.components.formatDuration
 import com.example.ui.components.formatPlayCount
 import org.junit.Assert.assertEquals
@@ -183,7 +186,8 @@ class ExampleUnitTest {
                     site.baseUrl.contains("apple")
             }
         )
-        assertEquals(2, TrackFilter.entries.size)
+        assertEquals(3, TrackFilter.entries.size)
+        assertTrue(TrackFilter.entries.contains(TrackFilter.DOWNLOADED))
         assertEquals(3, RepeatModeOption.entries.size)
     }
 
@@ -269,9 +273,10 @@ class ExampleUnitTest {
         assertEquals(3, com.example.player.AppTab.entries.size)
         assertTrue(com.example.player.AppTab.entries.contains(com.example.player.AppTab.ONLINE))
         assertTrue(com.example.player.AppTab.entries.contains(com.example.player.AppTab.FAVORITES))
-        assertEquals(2, com.example.player.OnlineSubSection.entries.size)
+        assertEquals(3, com.example.player.OnlineSubSection.entries.size)
         assertTrue(com.example.player.OnlineSubSection.entries.contains(com.example.player.OnlineSubSection.TRENDING))
         assertTrue(com.example.player.OnlineSubSection.entries.contains(com.example.player.OnlineSubSection.DISCOVER))
+        assertTrue(com.example.player.OnlineSubSection.entries.contains(com.example.player.OnlineSubSection.YOUTUBE_MUSIC))
 
         assertEquals(
             "ir_musicsweb_101",
@@ -453,62 +458,302 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun `extractLyricsFromHtml extracts clean persian lyrics and ignores download footers`() {
-        val htmlWithLyrics = """
-            <p>دانلود آهنگ جدید رضا بهرام بنام شب</p>
-            <h3>متن آهنگ شب رضا بهرام</h3>
-            <p>───┤ ♩♬♫♪♭ ├───</p>
-            <p>امشب دلم هوای تو را کرده است<br/>
-            باران دوباره یاد تو را زنده کرده است<br/>
-            ای کاش بیایی و ببینی حالم را</p>
-            <p>───┤ ♩♬♫♪♭ ├───</p>
-            <p>دانلود آهنگ با کیفیت 320</p>
-            <a href="https://cdn.example.com/song-320.mp3">لینک مستقیم</a>
-        """.trimIndent()
-
-        val extracted = TrendingIranianRepository.extractLyricsFromHtml(htmlWithLyrics)
-        assertTrue(extracted.contains("امشب دلم هوای تو را کرده است"))
-        assertTrue(extracted.contains("باران دوباره یاد تو را زنده کرده است"))
-        assertFalse(extracted.contains("دانلود آهنگ با کیفیت 320"))
-        assertFalse(extracted.contains("───┤"))
-
-        val htmlWithoutLyrics = """
-            <p>دانلود آهنگ جدید با کیفیت عالی</p>
-            <a href="https://cdn.example.com/track.mp3">دانلود MP3</a>
-        """.trimIndent()
-        assertEquals("", TrendingIranianRepository.extractLyricsFromHtml(htmlWithoutLyrics))
+    fun `app theme mode enum defines night, day and system presets in persian`() {
+        assertEquals(listOf(AppThemeMode.DARK, AppThemeMode.LIGHT, AppThemeMode.SYSTEM), AppThemeMode.entries)
+        assertEquals("شب", AppThemeMode.DARK.labelFa)
+        assertEquals("روز", AppThemeMode.LIGHT.labelFa)
+        assertEquals("سیستم", AppThemeMode.SYSTEM.labelFa)
     }
 
     @Test
-    fun `deduplicateAndRank preserves lyrics when merging duplicate tracks`() {
-        val noLyricsTrack = MusicTrack(
-            id = "ir_upmusics_1",
-            title = "شب",
-            artist = "رضا بهرام",
-            album = "ترند اینستا",
-            durationMs = 0L,
-            mediaUri = "https://cdn.a.ir/shab-320.mp3",
-            artworkUri = "https://cdn.a.ir/cover.jpg",
-            isOnline = true,
-            isInstaTrend = true,
-            trendScore = 50_000L,
-            lyrics = ""
+    fun `youtube music repository parses search, stream audio urls, duration and thumbnails`() {
+        assertEquals(6, YouTubeMusicCategory.entries.size)
+        assertEquals(225_000L, YouTubeMusicRepository.parseDurationLabelToMs("3:45"))
+        assertEquals(3_661_000L, YouTubeMusicRepository.parseDurationLabelToMs("1:01:01"))
+        assertEquals(0L, YouTubeMusicRepository.parseDurationLabelToMs("invalid"))
+
+        assertEquals(
+            "https://lh3.googleusercontent.com/art=w544-h544-l90-rj",
+            YouTubeMusicRepository.upgradeThumbnailUrl(
+                "https://lh3.googleusercontent.com/art=w120-h120-l90-rj",
+                "dQw4w9WgXcQ"
+            )
         )
-        val withLyricsTrack = noLyricsTrack.copy(
-            id = "ir_musicsweb_2",
-            mediaUri = "https://cdn.b.ir/shab-128.mp3",
-            artworkUri = "",
-            trendScore = 40_000L,
-            lyrics = "امشب دلم هوای تو را کرده است\nباران دوباره یاد تو را زنده کرده است"
+        assertEquals(
+            "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+            YouTubeMusicRepository.upgradeThumbnailUrl("", "dQw4w9WgXcQ")
         )
 
-        val merged = TrendingIranianRepository.deduplicateAndRank(
-            listOf(noLyricsTrack, withLyricsTrack),
-            TrendingCategory.ALL
+        val searchJson = """
+            {
+              "contents": {
+                "tabbedSearchResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicShelfRenderer": {
+                                  "contents": [
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "playlistItemData": { "videoId": "abc123XYZ" },
+                                        "thumbnail": {
+                                          "musicThumbnailRenderer": {
+                                            "thumbnail": {
+                                              "thumbnails": [
+                                                { "url": "https://lh3.googleusercontent.com/cover=w120-h120-l90-rj" }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [{ "text": "Taghdir (Remix)" }]
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  { "text": "Song" },
+                                                  { "text": " • " },
+                                                  { "text": "Shadmehr Aghili" },
+                                                  { "text": " • " },
+                                                  { "text": "Taghdir Album" },
+                                                  { "text": " • " },
+                                                  { "text": "4:12" }
+                                                ]
+                                              }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+
+        val tracks = YouTubeMusicRepository.parseSearchResponse(
+            rawJson = searchJson,
+            favoriteIds = setOf("ytm_abc123XYZ")
         )
-        assertEquals(1, merged.size)
-        assertTrue(merged.first().lyrics.contains("امشب دلم هوای تو را کرده است"))
-        assertEquals("https://cdn.a.ir/cover.jpg", merged.first().artworkUri)
+        assertEquals(1, tracks.size)
+        val track = tracks.first()
+        assertEquals("ytm_abc123XYZ", track.id)
+        assertEquals("abc123XYZ", track.youtubeVideoId)
+        assertEquals("Taghdir (Remix)", track.title)
+        assertEquals("Shadmehr Aghili", track.artist)
+        assertEquals("Taghdir Album", track.album)
+        assertEquals(252_000L, track.durationMs)
+        assertTrue(track.isFavorite)
+        assertTrue(track.isRemix)
+        assertTrue(track.isOnline)
+        assertEquals("https://lh3.googleusercontent.com/cover=w544-h544-l90-rj", track.artworkUri)
+
+        val playerJson = """
+            {
+              "playabilityStatus": { "status": "OK" },
+              "streamingData": {
+                "adaptiveFormats": [
+                  { "mimeType": "video/mp4; codecs=\"avc1\"", "bitrate": 1000000, "url": "https://cdn.example.com/video.mp4" },
+                  { "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 160000, "url": "https://cdn.example.com/audio.webm" },
+                  { "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 128000, "url": "https://cdn.example.com/audio.m4a" }
+                ]
+              }
+            }
+        """.trimIndent()
+        assertEquals(
+            "https://cdn.example.com/audio.m4a",
+            YouTubeMusicRepository.extractDirectAudioUrlFromPlayerResponse(playerJson)
+        )
+
+        val progressiveFallbackJson = """
+            {
+              "playabilityStatus": { "status": "OK" },
+              "streamingData": {
+                "adaptiveFormats": [
+                  { "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 128000, "signatureCipher": "s=abc" }
+                ],
+                "formats": [
+                  { "mimeType": "video/mp4; codecs=\"avc1.42001E, mp4a.40.2\"", "bitrate": 360000, "url": "https://cdn.example.com/muxed.mp4" }
+                ]
+              }
+            }
+        """.trimIndent()
+        assertEquals(
+            "https://cdn.example.com/muxed.mp4",
+            YouTubeMusicRepository.extractDirectAudioUrlFromPlayerResponse(progressiveFallbackJson)
+        )
+    }
+
+    @Test
+    fun `track download manager resolves audio extensions and builds safe filenames`() {
+        assertEquals(
+            "m4a",
+            com.example.player.TrackDownloadManager.resolveAudioExtension(
+                contentType = "audio/mp4",
+                mimeType = "audio/mp4",
+                url = "https://cdn.example.com/stream"
+            )
+        )
+        assertEquals(
+            "webm",
+            com.example.player.TrackDownloadManager.resolveAudioExtension(
+                contentType = "audio/webm",
+                mimeType = "",
+                url = "https://cdn.example.com/stream"
+            )
+        )
+        assertEquals(
+            "mp3",
+            com.example.player.TrackDownloadManager.resolveAudioExtension(
+                contentType = "audio/mpeg",
+                mimeType = "audio/mpeg",
+                url = "https://cdn.example.com/song.mp3"
+            )
+        )
+
+        val sample = MusicTrack(
+            id = "ytm_abc123",
+            title = "Test / Song: Remix?",
+            artist = "Shadmehr * Aghili",
+            album = "",
+            durationMs = 0L,
+            mediaUri = "https://example.com/test.mp3",
+            artworkUri = ""
+        )
+        val fileName = com.example.player.TrackDownloadManager.buildSafeFileName(sample)
+        assertFalse(fileName.contains("/"))
+        assertFalse(fileName.contains(":"))
+        assertFalse(fileName.contains("?"))
+        assertFalse(fileName.contains("*"))
+        assertTrue(fileName.contains("Shadmehr"))
+    }
+
+    @Test
+    fun `unblocked network helper detects iranian sinkhole ips, doh answers, and proxied urls`() {
+        assertTrue(com.example.player.UnblockedNetworkHelper.isSinkholeIp("10.10.34.34"))
+        assertTrue(com.example.player.UnblockedNetworkHelper.isSinkholeIp("10.10.34.35"))
+        assertTrue(com.example.player.UnblockedNetworkHelper.isSinkholeIp("10.10.35.12"))
+        assertFalse(com.example.player.UnblockedNetworkHelper.isSinkholeIp("127.0.0.1"))
+        assertFalse(com.example.player.UnblockedNetworkHelper.isSinkholeIp("172.67.180.10"))
+
+        assertTrue(
+            com.example.player.UnblockedNetworkHelper.isProxiedNonGoogleVideoUrl(
+                "https://inv.nadeko.net/latest_version?id=abc&itag=140&local=true"
+            )
+        )
+        assertFalse(
+            com.example.player.UnblockedNetworkHelper.isProxiedNonGoogleVideoUrl(
+                "https://rr1---sn-4g5e6nsz.googlevideo.com/videoplayback?expire=123"
+            )
+        )
+
+        val dohJson = """
+            {
+              "Status": 0,
+              "Answer": [
+                { "name": "inv.nadeko.net.", "type": 1, "data": "10.10.34.34" },
+                { "name": "inv.nadeko.net.", "type": 1, "data": "188.40.123.45" }
+              ]
+            }
+        """.trimIndent()
+        val parsedIps = com.example.player.UnblockedNetworkHelper.parseDohJsonAddresses(dohJson)
+        assertEquals(listOf("188.40.123.45"), parsedIps)
+    }
+
+    @Test
+    fun `youtube repository parses invidious and piped search mirrors and prioritizes proxied streams`() {
+        val invidiousSearchJson = """
+            [
+              {
+                "type": "video",
+                "title": "Shadmehr Aghili - Taghdir",
+                "videoId": "vidIran123",
+                "author": "Shadmehr Official",
+                "lengthSeconds": 245,
+                "viewCount": 1500000
+              }
+            ]
+        """.trimIndent()
+        val invTracks = YouTubeMusicRepository.parseInvidiousSearchResponse(
+            rawJson = invidiousSearchJson,
+            mirrorBaseUrl = "https://inv.nadeko.net",
+            favoriteIds = setOf("ytm_vidIran123")
+        )
+        assertEquals(1, invTracks.size)
+        assertEquals("vidIran123", invTracks.first().youtubeVideoId)
+        assertEquals("https://inv.nadeko.net/vi/vidIran123/mqdefault.jpg", invTracks.first().artworkUri)
+        assertEquals(245_000L, invTracks.first().durationMs)
+        assertTrue(invTracks.first().isFavorite)
+
+        val pipedSearchJson = """
+            {
+              "items": [
+                {
+                  "url": "/watch?v=piped999xyz",
+                  "title": "Mohsen Yeganeh - Behet Ghol Midam (Remix)",
+                  "uploaderName": "Mohsen Yeganeh",
+                  "duration": 210,
+                  "views": 950000,
+                  "thumbnail": "/vi_proxy/piped999xyz.jpg"
+                }
+              ]
+            }
+        """.trimIndent()
+        val pipedTracks = YouTubeMusicRepository.parsePipedSearchResponse(
+            rawJson = pipedSearchJson,
+            mirrorBaseUrl = "https://api.piped.private.coffee"
+        )
+        assertEquals(1, pipedTracks.size)
+        assertEquals("piped999xyz", pipedTracks.first().youtubeVideoId)
+        assertEquals("https://api.piped.private.coffee/vi_proxy/piped999xyz.jpg", pipedTracks.first().artworkUri)
+        assertTrue(pipedTracks.first().isRemix)
+
+        val invVideoJson = """
+            {
+              "adaptiveFormats": [
+                { "type": "audio/mp4", "bitrate": "128000", "url": "https://rr3---sn.googlevideo.com/videoplayback?id=1" },
+                { "type": "audio/mp4", "bitrate": "128000", "url": "/videoplayback?id=1&local=true" }
+              ]
+            }
+        """.trimIndent()
+        val invStreams = YouTubeMusicRepository.extractProxiedAudioCandidatesFromInvidiousJson(
+            rawJson = invVideoJson,
+            mirrorBaseUrl = "https://inv.nadeko.net"
+        )
+        assertEquals(2, invStreams.size)
+        assertEquals("https://inv.nadeko.net/videoplayback?id=1&local=true", invStreams.first().second)
+
+        val pipedStreamsJson = """
+            {
+              "audioStreams": [
+                { "mimeType": "audio/mp4", "bitrate": 128000, "url": "https://rr2.googlevideo.com/audio" },
+                { "mimeType": "audio/mp4", "bitrate": 96000, "url": "https://pipedproxy.example.com/audio" }
+              ]
+            }
+        """.trimIndent()
+        val pipedStreams = YouTubeMusicRepository.extractAudioCandidatesFromPipedJson(
+            rawJson = pipedStreamsJson,
+            mirrorBaseUrl = "https://api.piped.private.coffee"
+        )
+        assertEquals("https://pipedproxy.example.com/audio", pipedStreams.first().second)
     }
 }
 

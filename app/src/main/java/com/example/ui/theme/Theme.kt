@@ -14,14 +14,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 private val AvaDarkColorScheme = darkColorScheme(
-    primary = CoralPrimary,
-    onPrimary = Color(0xFF230803),
-    primaryContainer = CoralContainer,
-    onPrimaryContainer = Color(0xFFFFDDD4),
-    secondary = AmberSecondary,
-    onSecondary = Color(0xFF281800),
-    secondaryContainer = AmberContainer,
-    onSecondaryContainer = Color(0xFFFFE1B4),
+    primary = IvoryInk,
+    onPrimary = Color(0xFF14151B),
+    primaryContainer = IvoryInkContainer,
+    onPrimaryContainer = IvoryOnInkContainer,
+    secondary = CrimsonHeartDark,
+    onSecondary = Color.White,
+    secondaryContainer = CrimsonHeartContainerDark,
+    onSecondaryContainer = CrimsonOnContainerDark,
     tertiary = AutoTurquoise,
     onTertiary = Color(0xFF002622),
     tertiaryContainer = AutoTurquoiseContainer,
@@ -30,44 +30,61 @@ private val AvaDarkColorScheme = darkColorScheme(
     onBackground = TextPrimaryDark,
     surface = ObsidianSurface,
     onSurface = TextPrimaryDark,
-    surfaceVariant = ObsidianSurfaceHigh,
+    surfaceVariant = ObsidianSurfaceMid,
     onSurfaceVariant = TextSecondaryDark,
     surfaceContainerLowest = ObsidianBg,
-    surfaceContainerLow = ObsidianSurface,
-    surfaceContainer = ObsidianSurfaceHigh,
-    surfaceContainerHigh = ObsidianSurfaceElevated,
+    surfaceContainerLow = ObsidianSurfaceLow,
+    surfaceContainer = ObsidianSurfaceMid,
+    surfaceContainerHigh = ObsidianSurfaceHigh,
     surfaceContainerHighest = ObsidianSurfaceHighest,
-    outline = ObsidianBorder,
-    outlineVariant = Color(0xFF262A40)
+    inverseSurface = MiniPillNightSurface,
+    inverseOnSurface = MiniPillOnSurface,
+    inversePrimary = CrimsonHeartDark,
+    outline = ObsidianOutline,
+    outlineVariant = ObsidianOutlineVariant
 )
 
 private val AvaLightColorScheme = lightColorScheme(
-    primary = CoralPrimaryLight,
+    primary = EditorialInk,
     onPrimary = Color.White,
-    primaryContainer = CoralContainerLight,
-    onPrimaryContainer = Color(0xFF3E0B00),
-    secondary = AmberSecondaryLight,
+    primaryContainer = EditorialInkContainer,
+    onPrimaryContainer = EditorialOnInkContainer,
+    secondary = CrimsonHeart,
     onSecondary = Color.White,
-    tertiary = Color(0xFF007B72),
+    secondaryContainer = CrimsonHeartContainer,
+    onSecondaryContainer = CrimsonOnContainer,
+    tertiary = SlateTealLight,
     onTertiary = Color.White,
-    background = IvoryBg,
+    tertiaryContainer = SlateTealContainerLight,
+    onTertiaryContainer = SlateTealOnContainerLight,
+    background = PaperBg,
     onBackground = TextPrimaryLight,
-    surface = IvorySurface,
+    surface = PaperSurface,
     onSurface = TextPrimaryLight,
-    surfaceVariant = IvorySurfaceHigh,
-    onSurfaceVariant = TextSecondaryLight
+    surfaceVariant = PaperSurfaceMid,
+    onSurfaceVariant = TextSecondaryLight,
+    surfaceContainerLowest = PaperBg,
+    surfaceContainerLow = PaperSurfaceLow,
+    surfaceContainer = PaperSurfaceMid,
+    surfaceContainerHigh = PaperSurfaceHigh,
+    surfaceContainerHighest = PaperSurfaceHighest,
+    inverseSurface = MiniPillDarkSurface,
+    inverseOnSurface = MiniPillOnSurface,
+    inversePrimary = CrimsonHeart,
+    outline = PaperOutline,
+    outlineVariant = PaperOutlineVariant
 )
 
 val AvaShapes = Shapes(
     small = RoundedCornerShape(10.dp),
     medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 @Composable
 fun AvaPlayerTheme(
-    darkTheme: Boolean = true,
+    darkTheme: Boolean = false,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {

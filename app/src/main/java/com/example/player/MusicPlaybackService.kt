@@ -11,7 +11,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.BackgroundExecutor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -47,7 +49,15 @@ class MusicPlaybackService : MediaLibraryService() {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
+        val httpClient = UnblockedNetworkHelper.createUnblockedOkHttpClient(
+            connectTimeoutSec = 10L,
+            readTimeoutSec = 20L
+        )
+        val httpDataSourceFactory = UnblockedOkHttpDataSource.Factory(httpClient)
+        val dataSourceFactory = DefaultDataSource.Factory(this, httpDataSourceFactory)
+
         val exoPlayer = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .build()

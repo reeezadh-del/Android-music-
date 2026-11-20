@@ -28,12 +28,10 @@ data class IranianMusicSite(
 )
 
 class TrendingIranianRepository(
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(9, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val client: OkHttpClient = UnblockedNetworkHelper.createUnblockedOkHttpClient(
+        connectTimeoutSec = 9L,
+        readTimeoutSec = 12L
+    )
 ) {
 
     suspend fun fetchTrendingTracks(
@@ -100,51 +98,6 @@ class TrendingIranianRepository(
             deduplicateAndRank(collected, TrendingCategory.ALL)
         }
     }
-
-    suspend fun fetchLyricsForTrack(track: MusicTrack): String? = withContext(Dispatchers.IO) {
-        if (track.lyrics.isNotBlank()) return@withContext track.lyrics
-        if (track.pageUrl.isNotBlank()) {
-            val postHtml = executeGet(track.pageUrl)
-            if (!postHtml.isNullOrBlank()) {
-                val extracted = extractLyricsFromHtml(postHtml)
-                if (extracted.isNotBlank()) return@withContext extracted
-            }
-        }
-        fetchLyricsFromLrcLib(title = track.title, artist = track.artist)
-    }
-
-    private fun fetchLyricsFromLrcLib(title: String, artist: String): String? = runCatching {
-        val cleanTitle = title.replace(Regex("\\([^)]*\\)|\\[[^]]*]"), " ").trim()
-        val cleanArtist = artist
-            .takeIf { it !in GENERIC_ARTISTS }
-            ?.replace(Regex("\\([^)]*\\)|\\[[^]]*]"), " ")
-            ?.trim()
-            .orEmpty()
-        if (cleanTitle.isBlank()) return@runCatching null
-
-        val encodedTrack = URLEncoder.encode(cleanTitle, "UTF-8")
-        val url = if (cleanArtist.isNotBlank()) {
-            val encodedArtist = URLEncoder.encode(cleanArtist, "UTF-8")
-            "https://lrclib.net/api/get?track_name=$encodedTrack&artist_name=$encodedArtist"
-        } else {
-            "https://lrclib.net/api/search?q=$encodedTrack"
-        }
-
-        val body = executeGet(url) ?: return@runCatching null
-        val trimmed = body.trimStart()
-        val plain = when {
-            trimmed.startsWith("{") -> {
-                val obj = jsonParser.parseToJsonElement(trimmed).jsonObject
-                obj["plainLyrics"]?.jsonPrimitive?.contentOrNull
-            }
-            trimmed.startsWith("[") -> {
-                val arr = jsonParser.parseToJsonElement(trimmed).jsonArray
-                (arr.firstOrNull() as? JsonObject)?.get("plainLyrics")?.jsonPrimitive?.contentOrNull
-            }
-            else -> null
-        }
-        plain?.trim()?.takeIf { it.length >= 24 }?.take(4000)
-    }.getOrNull()
 
     private fun buildInstagramSearchQueries(
         preset: TrendingPreset,
@@ -372,110 +325,6 @@ class TrendingIranianRepository(
                 .replace("&nbsp;", " ")
                 .replace(Regex("\\s+"), " ")
                 .trim()
-        }
-
-        private fun decodeHtmlPreserveNewlines(rawHtml: String): String {
-            return rawHtml
-                .replace(Regex("(?i)<script\\b[^>]*>.*?</script>", setOf(RegexOption.DOT_MATCHES_ALL)), "\n")
-                .replace(Regex("(?i)<style\\b[^>]*>.*?</style>", setOf(RegexOption.DOT_MATCHES_ALL)), "\n")
-                .replace(Regex("(?i)<br\\s*/?>"), "\n")
-                .replace(Regex("(?i)</(?:p|div|li|h[1-6]|blockquote|section|article|tr)>"), "\n")
-                .replace(Regex("<[^>]+>"), " ")
-                .replace("&amp;", "&")
-                .replace("&#038;", "&")
-                .replace("&#8204;", "\u200C")
-                .replace("&zwnj;", "\u200C")
-                .replace("&#8211;", "–")
-                .replace("&#8212;", "—")
-                .replace("&ndash;", "–")
-                .replace("&mdash;", "—")
-                .replace("&quot;", "\"")
-                .replace("&#8220;", "\"")
-                .replace("&#8221;", "\"")
-                .replace("&#039;", "'")
-                .replace("&#8217;", "'")
-                .replace("&nbsp;", " ")
-        }
-
-        private val LYRICS_START_MARKERS = listOf(
-            "متن آهنگ", "متن اهنگ", "متن ترانه", "متن موزیک",
-            "متن ریمیکس", "متن شعر", "متن کامل آهنگ", "متن کامل",
-            "lyrics"
-        )
-
-        private val LYRICS_STOP_MARKERS = listOf(
-            "دانلود آهنگ", "دانلود اهنگ", "دانلود ریمیکس", "دانلود موزیک",
-            "پخش آنلاین", "کد پخش آنلاین", "لینک دانلود", "لینک کوتاه",
-            "با کیفیت 320", "با کیفیت ۳۲۰", "با کیفیت 128", "با کیفیت ۱۲۸",
-            "کیفیت 320", "کیفیت 128", "منبع:", "برچسب", "تگ ها", "تگ‌ها",
-            "مطالب مشابه", "آهنگ های پیشنهادی", "آهنگ‌های پیشنهادی",
-            "نظرات کاربران", "دیدگاه خود را", "ارسال دیدگاه",
-            "http://", "https://"
-        )
-
-        private val LYRICS_DECORATIVE_LINE_REGEX = Regex("^[\\s─━═│├┤♫♪♩♬♭★☆•·*~_\\-=]+$")
-
-        fun extractLyricsFromHtml(rawHtml: String): String {
-            if (rawHtml.isBlank()) return ""
-            val plainWithLines = decodeHtmlPreserveNewlines(rawHtml)
-                .lines()
-                .map { it.replace(Regex("[ \\t\\r]+"), " ").trim() }
-
-            val markerIndex = plainWithLines.indexOfFirst { line ->
-                if (line.isBlank() || line.length > 140) return@indexOfFirst false
-                val lower = line.lowercase()
-                LYRICS_START_MARKERS.any { marker -> lower.contains(marker) } &&
-                    !lower.contains("کد پخش") &&
-                    !lower.contains("برچسب")
-            }
-            if (markerIndex < 0) return ""
-
-            val collected = mutableListOf<String>()
-            var lastWasBlank = false
-            for (idx in (markerIndex + 1) until plainWithLines.size) {
-                val line = plainWithLines[idx]
-                if (line.isBlank()) {
-                    if (collected.isNotEmpty() && !lastWasBlank) {
-                        collected.add("")
-                        lastWasBlank = true
-                    }
-                    continue
-                }
-
-                val lower = line.lowercase()
-                if (LYRICS_DECORATIVE_LINE_REGEX.matches(line)) {
-                    val nonEmptyCount = collected.count { it.isNotBlank() }
-                    if (nonEmptyCount >= 3) break
-                    continue
-                }
-                if (line.contains("───┤") || line.contains("├───") || line.contains("♩♬")) {
-                    val nonEmptyCount = collected.count { it.isNotBlank() }
-                    if (nonEmptyCount >= 3) break
-                    continue
-                }
-                if (LYRICS_STOP_MARKERS.any { lower.contains(it) }) {
-                    break
-                }
-                if (SITE_NOISE_WORDS.any { lower.contains(it.lowercase()) }) {
-                    if (collected.count { it.isNotBlank() } >= 3) break
-                    continue
-                }
-                if (line.contains("{") && line.contains("}")) break
-
-                collected.add(line)
-                lastWasBlank = false
-                if (collected.size >= 120) break
-            }
-
-            while (collected.isNotEmpty() && collected.last().isBlank()) {
-                collected.removeAt(collected.lastIndex)
-            }
-            val nonEmptyLines = collected.filter { it.isNotBlank() }
-            if (nonEmptyLines.size < 2) return ""
-            val joined = collected.joinToString("\n").trim()
-            val nonSpaceChars = joined.count { !it.isWhitespace() }
-            if (nonSpaceChars < 24) return ""
-            return joined.take(4000)
         }
 
         fun detectIsRemix(rawText: String): Boolean {
@@ -745,7 +594,6 @@ class TrendingIranianRepository(
                 val isInstaTrend = detectIsInstaTrend(combinedText)
                 val parsed = parsePersianPostTitle(titleHtml, isRemix)
                 val trackId = "ir_${site.id}_$postId"
-                val lyrics = extractLyricsFromHtml(contentHtml)
 
                 MusicTrack(
                     id = trackId,
@@ -764,7 +612,6 @@ class TrendingIranianRepository(
                     sourceLabel = "",
                     playCount = 0L,
                     trendScore = computeInstagramTrendScore(combinedText, isRemix, preset, dateIso),
-                    lyrics = lyrics,
                     pageUrl = postUrl
                 )
             }
@@ -790,7 +637,6 @@ class TrendingIranianRepository(
                 val isInstaTrend = detectIsInstaTrend("$rawTitle $plainBlock")
                 val parsed = parsePersianPostTitle(rawTitle, isRemix)
                 val trackId = "ir_${site.id}_${mp3Url.hashCode().toUInt()}"
-                val lyrics = extractLyricsFromHtml(block)
                 results.add(
                     MusicTrack(
                         id = trackId,
@@ -809,7 +655,6 @@ class TrendingIranianRepository(
                         sourceLabel = "",
                         playCount = 0L,
                         trendScore = computeInstagramTrendScore("$rawTitle $plainBlock", isRemix, preset),
-                        lyrics = lyrics,
                         pageUrl = postUrl
                     )
                 )
@@ -871,7 +716,6 @@ class TrendingIranianRepository(
             val isInstaTrend = detectIsInstaTrend(decodedTitle) || postUrl.contains("instagram", ignoreCase = true)
             val parsed = parsePersianPostTitle(decodedTitle, isRemix)
             val trackId = "ir_${site.id}_${mp3Url.hashCode().toUInt()}"
-            val lyrics = extractLyricsFromHtml(postHtml)
 
             return MusicTrack(
                 id = trackId,
@@ -890,7 +734,6 @@ class TrendingIranianRepository(
                 sourceLabel = "",
                 playCount = 0L,
                 trendScore = computeInstagramTrendScore(decodedTitle, isRemix, preset, dateIso),
-                lyrics = lyrics,
                 pageUrl = postUrl
             )
         }
@@ -986,7 +829,6 @@ class TrendingIranianRepository(
                             trendScore = maxOf(existing.track.trendScore, track.trendScore) + consensusBoost,
                             isFavorite = existing.track.isFavorite || track.isFavorite,
                             isInstaTrend = existing.track.isInstaTrend || track.isInstaTrend,
-                            lyrics = existing.track.lyrics.ifBlank { track.lyrics },
                             pageUrl = existing.track.pageUrl.ifBlank { track.pageUrl }
                         )
                     }
@@ -1012,16 +854,10 @@ class TrendingIranianRepository(
             return when {
                 currentGenericArtist && !candidateGenericArtist -> candidate.copy(
                     artworkUri = candidate.artworkUri.ifBlank { current.artworkUri },
-                    lyrics = candidate.lyrics.ifBlank { current.lyrics },
                     pageUrl = candidate.pageUrl.ifBlank { current.pageUrl }
                 )
                 current.artworkUri.isBlank() && candidate.artworkUri.isNotBlank() -> current.copy(
                     artworkUri = candidate.artworkUri,
-                    lyrics = current.lyrics.ifBlank { candidate.lyrics },
-                    pageUrl = current.pageUrl.ifBlank { candidate.pageUrl }
-                )
-                current.lyrics.isBlank() && candidate.lyrics.isNotBlank() -> current.copy(
-                    lyrics = candidate.lyrics,
                     pageUrl = current.pageUrl.ifBlank { candidate.pageUrl }
                 )
                 else -> current

@@ -2,6 +2,12 @@ package com.example.player
 
 import kotlinx.serialization.Serializable
 
+enum class AppThemeMode(val labelFa: String) {
+    DARK("شب"),
+    LIGHT("روز"),
+    SYSTEM("سیستم")
+}
+
 enum class RepeatModeOption {
     OFF,
     ALL,
@@ -10,7 +16,8 @@ enum class RepeatModeOption {
 
 enum class TrackFilter(val labelFa: String) {
     ALL("همه آهنگ‌ها"),
-    FAVORITES("علاقه‌مندی‌ها")
+    FAVORITES("علاقه‌مندی‌ها"),
+    DOWNLOADED("دانلود شده")
 }
 
 enum class AppTab(val labelFa: String) {
@@ -21,7 +28,17 @@ enum class AppTab(val labelFa: String) {
 
 enum class OnlineSubSection(val labelFa: String) {
     TRENDING("ترند اینستا"),
-    DISCOVER("تازه‌های آنلاین")
+    DISCOVER("تازه‌های آنلاین"),
+    YOUTUBE_MUSIC("یوتیوب موزیک")
+}
+
+enum class YouTubeMusicCategory(val labelFa: String, val searchQuery: String) {
+    IRANIAN_TOP("برترین‌های ایران", "Persian Top Hits New Song"),
+    GLOBAL_HITS("هیت‌های جهانی", "Top Global Songs Official Audio"),
+    PERSIAN_POP("پاپ فارسی", "پاپ فارسی آهنگ جدید"),
+    PERSIAN_RAP("رپ و هیپ‌هاپ", "Persian Rap Hip Hop Official Audio"),
+    CHILL_LOFI("آرام و شبانه", "Chill Acoustic LoFi Music"),
+    WORKOUT_CLUB("ریمیکس و کلاب", "Club Dance Remix Bass Boosted")
 }
 
 enum class OnlineDiscoverStyle(val labelFa: String, val searchKeywords: List<String>) {
@@ -100,5 +117,7 @@ data class MusicTrack(
     val playCount: Long = 0L,
     val trendScore: Long = 0L,
     val lyrics: String = "",
-    val pageUrl: String = ""
+    val pageUrl: String = "",
+    val youtubeVideoId: String = "",
+    val isDownloaded: Boolean = false
 )

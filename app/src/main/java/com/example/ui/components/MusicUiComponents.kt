@@ -34,11 +34,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -80,6 +82,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +93,7 @@ import coil.compose.SubcomposeAsyncImage
 import com.example.R
 import com.example.player.MusicTrack
 import com.example.player.RepeatModeOption
+import com.example.player.TrackDownloadStatus
 import com.example.player.TrackReactionSummary
 import com.example.player.TrackReactionType
 import com.example.ui.theme.OutfitFontFamily
@@ -170,44 +175,19 @@ fun StudioHeroBanner(
     accentColor: Color = MaterialTheme.colorScheme.primary,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(24.dp)
-    Box(
+    val shape = RoundedCornerShape(22.dp)
+    Surface(
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp,
         modifier = modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .border(
                 width = 1.dp,
-                brush = Brush.linearGradient(
-                    listOf(
-                        accentColor.copy(alpha = 0.48f),
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f)
-                    )
-                ),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f),
                 shape = shape
             )
     ) {
-        Image(
-            painter = painterResource(id = R.drawable.img_studio_hero_backdrop_1795019180500),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            alpha = 0.38f,
-            modifier = Modifier.matchParentSize()
-        )
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.90f),
-                            MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.56f),
-                            accentColor.copy(alpha = 0.14f)
-                        )
-                    )
-                )
-        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -359,6 +339,83 @@ fun AlbumCoverImage(
 }
 
 @Composable
+fun TrackDownloadButton(
+    status: TrackDownloadStatus?,
+    isDownloaded: Boolean,
+    onClick: () -> Unit,
+    testTag: String,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant
+) {
+    val downloadingDesc = stringResource(R.string.cd_downloading)
+    val downloadedDesc = stringResource(R.string.cd_downloaded)
+    val downloadDesc = stringResource(R.string.cd_download)
+    val alreadyDownloaded = isDownloaded || status is TrackDownloadStatus.Downloaded
+
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+            .size(48.dp)
+            .semantics {
+                contentDescription = when {
+                    status is TrackDownloadStatus.Downloading -> downloadingDesc
+                    alreadyDownloaded -> downloadedDesc
+                    else -> downloadDesc
+                }
+            }
+            .testTag(testTag)
+    ) {
+        when (status) {
+            is TrackDownloadStatus.Downloading -> {
+                if (status.progress in 0f..1f) {
+                    CircularProgressIndicator(
+                        progress = { status.progress },
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            is TrackDownloadStatus.Downloaded -> {
+                Icon(
+                    imageVector = Icons.Rounded.DownloadDone,
+                    contentDescription = downloadedDesc,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+            else -> {
+                if (isDownloaded) {
+                    Icon(
+                        imageVector = Icons.Rounded.DownloadDone,
+                        contentDescription = downloadedDesc,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(21.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Download,
+                        contentDescription = downloadDesc,
+                        tint = if (status is TrackDownloadStatus.Error) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            tint
+                        },
+                        modifier = Modifier.size(21.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun TrackRowItem(
     track: MusicTrack,
     isCurrent: Boolean,
@@ -366,28 +423,16 @@ fun TrackRowItem(
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
     onRemoveImported: (() -> Unit)?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRemoveDownloaded: (() -> Unit)? = null
 ) {
-    val shape = RoundedCornerShape(20.dp)
-    val borderBrush = if (isCurrent) {
-        Brush.linearGradient(
-            listOf(
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)
-            )
-        )
-    } else {
-        Brush.linearGradient(
-            listOf(
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-            )
-        )
-    }
+    val shape = RoundedCornerShape(18.dp)
+    val ink = MaterialTheme.colorScheme.primary
+    val crimson = MaterialTheme.colorScheme.secondary
     val containerColor = if (isCurrent) {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    } else {
         MaterialTheme.colorScheme.surfaceContainerLow
+    } else {
+        MaterialTheme.colorScheme.background
     }
 
     Row(
@@ -395,30 +440,22 @@ fun TrackRowItem(
             .fillMaxWidth()
             .clip(shape)
             .background(containerColor)
-            .border(if (isCurrent) 1.2.dp else 1.dp, borderBrush, shape)
+            .then(
+                if (isCurrent) {
+                    Modifier.border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+                        shape
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 10.dp, vertical = 9.dp)
             .testTag("track_row_${track.id}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (isCurrent) {
-            Box(
-                modifier = Modifier
-                    .width(3.5.dp)
-                    .height(38.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.secondary
-                            )
-                        )
-                    )
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-        }
-
         Box(contentAlignment = Alignment.Center) {
             AlbumCoverImage(
                 artworkUri = track.artworkUri,
@@ -426,11 +463,11 @@ fun TrackRowItem(
                 modifier = Modifier
                     .size(54.dp)
                     .border(
-                        width = 1.dp,
+                        width = if (isCurrent) 1.4.dp else 0.8.dp,
                         color = if (isCurrent) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                            crimson.copy(alpha = 0.8f)
                         } else {
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
                         },
                         shape = RoundedCornerShape(14.dp)
                     ),
@@ -441,37 +478,63 @@ fun TrackRowItem(
                     modifier = Modifier
                         .size(54.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.62f)),
+                        .background(Color.Black.copy(alpha = 0.45f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    AnimatedEqualizerBars(barColor = MaterialTheme.colorScheme.primary)
+                    AnimatedEqualizerBars(barColor = Color.White, maxHeight = 16.dp)
                 }
             }
         }
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
             Text(
                 text = track.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
-                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                color = if (isCurrent) crimson else MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(3.dp))
-            Text(
-                text = if (track.durationMs > 0L) {
-                    "${track.artist} • ${formatDuration(track.durationMs)}"
-                } else {
-                    track.artist
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (track.durationMs > 0L) {
+                    Text(
+                        text = "• ${formatDuration(track.durationMs)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = OutfitFontFamily,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                        maxLines = 1
+                    )
+                }
+                if (track.isDownloaded) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Text(
+                            text = stringResource(R.string.library_badge_downloaded),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
         }
 
         IconButton(
@@ -483,19 +546,54 @@ fun TrackRowItem(
             Icon(
                 imageVector = if (track.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                 contentDescription = stringResource(R.string.cd_favorite),
-                tint = if (track.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (track.isFavorite) crimson else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                modifier = Modifier.size(20.dp)
             )
         }
 
-        if (onRemoveImported != null) {
+        val removeHandler = onRemoveDownloaded ?: onRemoveImported
+        if (removeHandler != null) {
             IconButton(
-                onClick = onRemoveImported,
-                modifier = Modifier.size(48.dp)
+                onClick = removeHandler,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("remove_track_btn_${track.id}")
             ) {
                 Icon(
                     imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = "حذف",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentDescription = if (onRemoveDownloaded != null) {
+                        stringResource(R.string.cd_delete_download)
+                    } else {
+                        "حذف"
+                    },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isCurrent) ink else MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isCurrent && isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = if (isCurrent && isPlaying) {
+                        stringResource(R.string.cd_pause)
+                    } else {
+                        stringResource(R.string.cd_play)
+                    },
+                    tint = if (isCurrent) MaterialTheme.colorScheme.onPrimary else ink,
+                    modifier = Modifier.size(17.dp)
                 )
             }
         }
@@ -869,6 +967,7 @@ fun MiniPlayerBar(
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     modifier: Modifier = Modifier,
+    onSkipPrevious: (() -> Unit)? = null,
     applyNavigationBarPadding: Boolean = false
 ) {
     val navModifier = if (applyNavigationBarPadding) {
@@ -876,96 +975,88 @@ fun MiniPlayerBar(
     } else {
         Modifier
     }
-    val shape = RoundedCornerShape(24.dp)
+    val shape = RoundedCornerShape(28.dp)
+    val pillBg = MaterialTheme.colorScheme.inverseSurface
+    val pillFg = MaterialTheme.colorScheme.inverseOnSurface
+    val crimson = MaterialTheme.colorScheme.inversePrimary
 
     Surface(
         shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 8.dp,
+        color = pillBg,
+        contentColor = pillFg,
+        tonalElevation = 6.dp,
         shadowElevation = 12.dp,
         modifier = modifier
             .fillMaxWidth()
             .then(navModifier)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
             .clip(shape)
-            .border(
-                width = 1.dp,
-                brush = Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.48f),
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f)
-                    )
-                ),
-                shape = shape
-            )
             .clickable(onClick = onExpand)
             .testTag("mini_player_bar")
     ) {
-        Column(
-            modifier = Modifier.background(
-                Brush.horizontalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.16f),
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    )
-                )
-            )
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    AlbumCoverImage(
-                        artworkUri = track.artworkUri,
-                        contentDescription = track.title,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                                RoundedCornerShape(13.dp)
-                            ),
-                        shape = RoundedCornerShape(13.dp)
+                if (isPlaying) {
+                    AnimatedEqualizerBars(
+                        barColor = crimson,
+                        barWidth = 2.5.dp,
+                        maxHeight = 14.dp
                     )
-                    if (isPlaying) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(13.dp))
-                                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.5f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            AnimatedEqualizerBars(
-                                barColor = MaterialTheme.colorScheme.primary,
-                                maxHeight = 16.dp
-                            )
-                        }
-                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 8.dp, height = 8.dp)
+                            .clip(CircleShape)
+                            .background(crimson.copy(alpha = 0.85f))
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
                 }
-                Spacer(modifier = Modifier.width(12.dp))
+
+                AlbumCoverImage(
+                    artworkUri = track.artworkUri,
+                    contentDescription = track.title,
+                    modifier = Modifier.size(44.dp),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.width(11.dp))
+
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = track.title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
+                        color = pillFg,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = if (track.isOnline && track.isRemix) {
-                            "${track.artist} • ریمیکس"
-                        } else {
-                            track.artist
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = track.artist,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = pillFg.copy(alpha = 0.68f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                if (onSkipPrevious != null) {
+                    IconButton(
+                        onClick = onSkipPrevious,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.SkipPrevious,
+                            contentDescription = stringResource(R.string.cd_previous),
+                            tint = pillFg,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
 
                 IconButton(
@@ -976,16 +1067,16 @@ fun MiniPlayerBar(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
+                            .background(pillFg),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = if (isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp)
+                            tint = pillBg,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
@@ -998,7 +1089,9 @@ fun MiniPlayerBar(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.SkipNext,
-                        contentDescription = stringResource(R.string.cd_next)
+                        contentDescription = stringResource(R.string.cd_next),
+                        tint = pillFg,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -1007,9 +1100,9 @@ fun MiniPlayerBar(
                 progress = { progress.coerceIn(0f, 1f) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    .height(2.5.dp),
+                color = crimson,
+                trackColor = pillFg.copy(alpha = 0.14f)
             )
         }
     }
@@ -1038,7 +1131,8 @@ fun FullNowPlayingSheet(
     socialSummary: TrackReactionSummary = TrackReactionSummary(),
     onToggleReaction: ((TrackReactionType) -> Unit)? = null,
     onOpenComments: (() -> Unit)? = null,
-    onOpenLyrics: (() -> Unit)? = null
+    downloadStatus: TrackDownloadStatus? = null,
+    onDownloadClick: (() -> Unit)? = null
 ) {
     BackHandler(onBack = onCollapse)
 
@@ -1048,30 +1142,10 @@ fun FullNowPlayingSheet(
     val currentFraction = if (isDragging) dragFraction else (positionMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
     val displayPosMs = if (isDragging) (dragFraction * safeDuration).toLong() else positionMs
 
-    val primaryGlow = MaterialTheme.colorScheme.primary
-    val secondaryGlow = MaterialTheme.colorScheme.secondary
-    val tertiaryGlow = MaterialTheme.colorScheme.tertiary
-
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .drawBehind {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(primaryGlow.copy(alpha = 0.22f), Color.Transparent),
-                        center = Offset(size.width * 0.5f, size.height * 0.30f),
-                        radius = size.maxDimension * 0.55f
-                    )
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(tertiaryGlow.copy(alpha = 0.12f), Color.Transparent),
-                        center = Offset(size.width * 0.85f, size.height * 0.65f),
-                        radius = size.maxDimension * 0.45f
-                    )
-                )
-            }
             .statusBarsPadding()
             .navigationBarsPadding(),
         contentAlignment = Alignment.Center
@@ -1084,264 +1158,180 @@ fun FullNowPlayingSheet(
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Drag Handle + Header
+            // Minimalist Editorial "Play" Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        text = stringResource(R.string.editorial_play_heading),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    EditorialDashDotIndicator()
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (onOpenDrivingMode != null) {
+                        IconButton(
+                            onClick = onOpenDrivingMode,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("now_playing_driving_mode_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Speed,
+                                contentDescription = stringResource(R.string.driving_mode_title),
+                                tint = if (isAutoSpeedActive) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
+                    if (onOpenAutoSpeedVolume != null) {
+                        IconButton(
+                            onClick = onOpenAutoSpeedVolume,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("now_playing_speed_volume_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.DirectionsCar,
+                                contentDescription = stringResource(R.string.auto_speed_volume_title),
+                                tint = if (isAutoSpeedActive) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = onCollapse,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("now_playing_collapse")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = stringResource(R.string.cd_back),
+                            tint = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+            }
+
+            // Centerpiece Vinyl Disc Peeking Behind Square Artwork
+            EditorialVinylArtworkShowcase(
+                artworkUri = track.artworkUri,
+                title = track.title,
+                isPlaying = isPlaying
+            )
+
+            // Editorial Title + Artist + Crimson Heart Row + Compact Social Strip
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .width(42.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.colorScheme.outlineVariant)
-                )
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        onClick = onCollapse,
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = when {
+                                track.isDownloaded -> "${track.artist} • ${stringResource(R.string.library_badge_downloaded)}"
+                                track.isOnline -> "${track.artist} • ${if (track.isRemix) "ریمیکس" else "آنلاین"}"
+                                else -> track.artist
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    if (onDownloadClick != null && (track.isOnline || track.isDownloaded)) {
+                        TrackDownloadButton(
+                            status = downloadStatus,
+                            isDownloaded = track.isDownloaded,
+                            onClick = onDownloadClick,
+                            testTag = "now_playing_download"
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onToggleFavorite,
                         modifier = Modifier
                             .size(48.dp)
-                            .testTag("now_playing_collapse")
+                            .testTag("now_playing_favorite")
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.KeyboardArrowDown,
-                                contentDescription = stringResource(R.string.cd_back),
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (isPlaying) {
-                                AnimatedEqualizerBars(
-                                    barColor = MaterialTheme.colorScheme.primary,
-                                    barWidth = 2.5.dp,
-                                    maxHeight = 12.dp
-                                )
-                            }
-                            Text(
-                                text = if (track.isOnline) "پخش آنلاین ترند" else "در حال پخش",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (onOpenDrivingMode != null) {
-                            IconButton(
-                                onClick = onOpenDrivingMode,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .testTag("now_playing_driving_mode_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Speed,
-                                    contentDescription = stringResource(R.string.driving_mode_title),
-                                    tint = if (isAutoSpeedActive) {
-                                        MaterialTheme.colorScheme.tertiary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                        }
-                        if (onOpenAutoSpeedVolume != null) {
-                            IconButton(
-                                onClick = onOpenAutoSpeedVolume,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .testTag("now_playing_speed_volume_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.DirectionsCar,
-                                    contentDescription = stringResource(R.string.auto_speed_volume_title),
-                                    tint = if (isAutoSpeedActive) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = onToggleFavorite,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("now_playing_favorite")
-                        ) {
-                            Icon(
-                                imageVector = if (track.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                contentDescription = stringResource(R.string.cd_favorite),
-                                tint = if (track.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Icon(
+                            imageVector = if (track.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            contentDescription = stringResource(R.string.cd_favorite),
+                            tint = if (track.isFavorite) {
+                                MaterialTheme.colorScheme.secondary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(26.dp)
+                        )
                     }
                 }
-            }
-
-            // Artwork Showcase
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.80f)
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(32.dp))
-                    .border(
-                        width = 1.5.dp,
-                        brush = Brush.linearGradient(
-                            listOf(
-                                primaryGlow.copy(alpha = 0.65f),
-                                secondaryGlow.copy(alpha = 0.35f),
-                                tertiaryGlow.copy(alpha = 0.45f)
-                            )
-                        ),
-                        shape = RoundedCornerShape(32.dp)
-                    )
-            ) {
-                AlbumCoverImage(
-                    artworkUri = track.artworkUri,
-                    contentDescription = track.title,
-                    modifier = Modifier.fillMaxSize(),
-                    shape = RoundedCornerShape(32.dp)
-                )
-            }
-
-            // Title & Artist + Online Badge
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (track.isOnline) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = buildString {
-                                    if (track.isRemix) append("ریمیکس • ")
-                                    append(if (track.isInstaTrend) "ترند اینستا" else "پخش آنلاین")
-                                },
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = track.artist,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
 
                 if (onToggleReaction != null && onOpenComments != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
                     TrackSocialBar(
                         trackId = "now_${track.id}",
                         summary = socialSummary,
                         onToggleReaction = onToggleReaction,
                         onOpenComments = onOpenComments,
-                        centered = true
+                        centered = false
                     )
-                }
-
-                if (track.lyrics.isNotBlank() && onOpenLyrics != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Surface(
-                        onClick = onOpenLyrics,
-                        shape = RoundedCornerShape(50),
-                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.78f),
-                        modifier = Modifier
-                            .height(36.dp)
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
-                                RoundedCornerShape(50)
-                            )
-                            .testTag("now_playing_lyrics_button")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.MenuBook,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = stringResource(R.string.online_lyrics_badge),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
                 }
             }
 
-            // Seekbar + Time
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Slider(
-                    value = currentFraction,
-                    onValueChange = {
+            // Signature Sinusoidal Wavy Seekbar + Timestamps
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                EditorialWavySeekBar(
+                    fraction = currentFraction,
+                    isPlaying = isPlaying,
+                    isDragging = isDragging,
+                    onSeekDrag = { next ->
                         isDragging = true
-                        dragFraction = it
+                        dragFraction = next
                     },
-                    onValueChangeFinished = {
-                        onSeekTo((dragFraction * safeDuration).toLong())
+                    onSeekCommit = { finalFraction ->
+                        onSeekTo((finalFraction * safeDuration).toLong())
                         isDragging = false
                     },
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                    )
+                    activeColor = MaterialTheme.colorScheme.primary,
+                    inactiveColor = MaterialTheme.colorScheme.outline
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1362,83 +1352,14 @@ fun FullNowPlayingSheet(
                 }
             }
 
-            // Transport Controls
+            // Minimalist 5-Button Editorial Transport Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 10.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onToggleShuffle,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Shuffle,
-                        contentDescription = stringResource(R.string.cd_shuffle),
-                        tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Surface(
-                    onClick = onSkipPrevious,
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .testTag("now_playing_prev")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.SkipPrevious,
-                            contentDescription = stringResource(R.string.cd_previous),
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary,
-                                    MaterialTheme.colorScheme.secondary
-                                )
-                            )
-                        )
-                        .clickable(onClick = onTogglePlayPause)
-                        .testTag("now_playing_play_pause"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                }
-
-                Surface(
-                    onClick = onSkipNext,
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .testTag("now_playing_next")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.SkipNext,
-                            contentDescription = stringResource(R.string.cd_next),
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-                }
-
                 IconButton(
                     onClick = onCycleRepeat,
                     modifier = Modifier.size(48.dp)
@@ -1451,7 +1372,69 @@ fun FullNowPlayingSheet(
                         },
                         contentDescription = stringResource(R.string.cd_repeat),
                         tint = if (repeatMode != RepeatModeOption.OFF) {
-                            MaterialTheme.colorScheme.primary
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+
+                IconButton(
+                    onClick = onSkipPrevious,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("now_playing_prev")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipPrevious,
+                        contentDescription = stringResource(R.string.cd_previous),
+                        tint = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                Surface(
+                    onClick = onTogglePlayPause,
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier
+                        .size(66.dp)
+                        .testTag("now_playing_play_pause")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onSkipNext,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("now_playing_next")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipNext,
+                        contentDescription = stringResource(R.string.cd_next),
+                        tint = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onToggleShuffle,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Shuffle,
+                        contentDescription = stringResource(R.string.cd_shuffle),
+                        tint = if (shuffleEnabled) {
+                            MaterialTheme.colorScheme.secondary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }

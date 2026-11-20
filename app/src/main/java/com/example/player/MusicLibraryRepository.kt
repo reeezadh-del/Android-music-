@@ -32,18 +32,36 @@ class MusicLibraryRepository(
 
     suspend fun loadAllTracks(
         favoriteIds: Set<String>,
-        importedUris: Set<String>
+        importedUris: Set<String>,
+        downloadedTracks: List<MusicTrack> = emptyList()
     ): List<MusicTrack> = withContext(Dispatchers.IO) {
         val deviceTracks = if (hasAudioPermission()) scanMediaStoreTracks(favoriteIds) else emptyList()
         val existingUris = deviceTracks.map { it.mediaUri }.toSet()
 
+        val validDownloaded = downloadedTracks.mapNotNull { track ->
+            val parsed = Uri.parse(track.mediaUri)
+            val fileExists = when (parsed.scheme) {
+                "file", null -> parsed.path?.let { java.io.File(it).exists() } == true
+                else -> true
+            }
+            if (!fileExists) null
+            else track.copy(
+                isFavorite = track.id in favoriteIds,
+                isDownloaded = true,
+                isOnline = false
+            )
+        }
+        val downloadedUris = validDownloaded.map { it.mediaUri }.toSet()
+
         val importedTracks = importedUris
             .asSequence()
-            .filter { it !in existingUris }
+            .filter { it !in existingUris && it !in downloadedUris }
             .mapNotNull { uriStr -> readImportedTrack(Uri.parse(uriStr), favoriteIds) }
             .toList()
 
-        (importedTracks + deviceTracks).distinctBy { it.mediaUri }
+        (validDownloaded + importedTracks + deviceTracks)
+            .distinctBy { it.mediaUri }
+            .distinctBy { it.id }
     }
 
     suspend fun persistImportedUris(uris: List<Uri>): Int = withContext(Dispatchers.IO) {

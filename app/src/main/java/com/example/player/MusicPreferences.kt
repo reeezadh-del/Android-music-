@@ -25,7 +25,9 @@ data class StoredMusicPrefs(
     val isGuestMode: Boolean = false,
     val speedVolumeEnabled: Boolean = true,
     val speedVolumeSensitivity: SpeedVolumeSensitivity = SpeedVolumeSensitivity.BALANCED,
-    val onlyWhenAndroidAutoConnected: Boolean = false
+    val onlyWhenAndroidAutoConnected: Boolean = false,
+    val themeMode: AppThemeMode = AppThemeMode.LIGHT,
+    val downloadedTracks: List<MusicTrack> = emptyList()
 )
 
 class MusicPreferences(private val context: Context) {
@@ -43,14 +45,23 @@ class MusicPreferences(private val context: Context) {
         val SPEED_VOLUME_ENABLED = booleanPreferencesKey("speed_volume_enabled")
         val SPEED_VOLUME_SENSITIVITY = stringPreferencesKey("speed_volume_sensitivity")
         val ONLY_WHEN_ANDROID_AUTO = booleanPreferencesKey("speed_volume_only_android_auto")
+        val THEME_MODE = stringPreferencesKey("app_theme_mode")
+        val DOWNLOADED_TRACKS = stringPreferencesKey("downloaded_tracks")
     }
 
     val prefsFlow: Flow<StoredMusicPrefs> = context.musicDataStore.data.map { prefs ->
         val repeatStr = prefs[Keys.REPEAT_MODE] ?: RepeatModeOption.OFF.name
         val sensitivityStr = prefs[Keys.SPEED_VOLUME_SENSITIVITY] ?: SpeedVolumeSensitivity.BALANCED.name
+        val themeStr = prefs[Keys.THEME_MODE] ?: AppThemeMode.LIGHT.name
         val onlineJson = prefs[Keys.FAVORITE_ONLINE_TRACKS]
         val onlineTracks = if (!onlineJson.isNullOrBlank()) {
             runCatching { json.decodeFromString<List<MusicTrack>>(onlineJson) }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+        val downloadedJson = prefs[Keys.DOWNLOADED_TRACKS]
+        val downloadedTracks = if (!downloadedJson.isNullOrBlank()) {
+            runCatching { json.decodeFromString<List<MusicTrack>>(downloadedJson) }.getOrDefault(emptyList())
         } else {
             emptyList()
         }
@@ -66,7 +77,10 @@ class MusicPreferences(private val context: Context) {
             speedVolumeEnabled = prefs[Keys.SPEED_VOLUME_ENABLED] ?: true,
             speedVolumeSensitivity = runCatching { SpeedVolumeSensitivity.valueOf(sensitivityStr) }
                 .getOrDefault(SpeedVolumeSensitivity.BALANCED),
-            onlyWhenAndroidAutoConnected = prefs[Keys.ONLY_WHEN_ANDROID_AUTO] ?: false
+            onlyWhenAndroidAutoConnected = prefs[Keys.ONLY_WHEN_ANDROID_AUTO] ?: false,
+            themeMode = runCatching { AppThemeMode.valueOf(themeStr) }
+                .getOrDefault(AppThemeMode.LIGHT),
+            downloadedTracks = downloadedTracks
         )
     }
 
@@ -183,6 +197,37 @@ class MusicPreferences(private val context: Context) {
     suspend fun setOnlyWhenAndroidAutoConnected(onlyAndroidAuto: Boolean) {
         context.musicDataStore.edit { prefs ->
             prefs[Keys.ONLY_WHEN_ANDROID_AUTO] = onlyAndroidAuto
+        }
+    }
+
+    suspend fun setThemeMode(mode: AppThemeMode) {
+        context.musicDataStore.edit { prefs ->
+            prefs[Keys.THEME_MODE] = mode.name
+        }
+    }
+
+    suspend fun addDownloadedTrack(track: MusicTrack) {
+        context.musicDataStore.edit { prefs ->
+            val current = prefs[Keys.DOWNLOADED_TRACKS]
+                ?.takeIf { it.isNotBlank() }
+                ?.let { runCatching { json.decodeFromString<List<MusicTrack>>(it) }.getOrDefault(emptyList()) }
+                ?.toMutableList()
+                ?: mutableListOf()
+            current.removeAll { it.id == track.id }
+            current.add(0, track.copy(isDownloaded = true, isOnline = false))
+            prefs[Keys.DOWNLOADED_TRACKS] = json.encodeToString(current)
+        }
+    }
+
+    suspend fun removeDownloadedTrack(trackId: String) {
+        context.musicDataStore.edit { prefs ->
+            val current = prefs[Keys.DOWNLOADED_TRACKS]
+                ?.takeIf { it.isNotBlank() }
+                ?.let { runCatching { json.decodeFromString<List<MusicTrack>>(it) }.getOrDefault(emptyList()) }
+                ?.toMutableList()
+                ?: mutableListOf()
+            current.removeAll { it.id == trackId }
+            prefs[Keys.DOWNLOADED_TRACKS] = json.encodeToString(current)
         }
     }
 

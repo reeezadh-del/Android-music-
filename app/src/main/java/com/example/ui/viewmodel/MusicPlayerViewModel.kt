@@ -18,6 +18,7 @@ import com.example.diagnostics.CrashReporter
 import com.example.drive.DriveDbSnapshot
 import com.example.drive.GoogleDriveDatabaseManager
 import com.example.player.AppTab
+import com.example.player.AppThemeMode
 import com.example.player.AudioVoiceRecorder
 import com.example.player.AutoSpeedVolumeManager
 import com.example.player.AutoSpeedVolumeState
@@ -31,6 +32,8 @@ import com.example.player.OnlineSubSection
 import com.example.player.RepeatModeOption
 import com.example.player.SpeedVolumeSensitivity
 import com.example.player.TrackCommentUi
+import com.example.player.TrackDownloadManager
+import com.example.player.TrackDownloadStatus
 import com.example.player.TrackFilter
 import com.example.player.TrackReactionSummary
 import com.example.player.TrackReactionType
@@ -38,6 +41,8 @@ import com.example.player.TrackSocialRepository
 import com.example.player.TrendingCategory
 import com.example.player.TrendingPreset
 import com.example.player.TrendingIranianRepository
+import com.example.player.YouTubeMusicCategory
+import com.example.player.YouTubeMusicRepository
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.google.firebase.Firebase
@@ -102,7 +107,9 @@ class MusicPlayerViewModel(
     val currentUserId: String,
     private val autoSpeedVolumeManager: AutoSpeedVolumeManager? = null,
     private val favoriteTracksRepository: FavoriteTracksRepository? = null,
-    private val trackSocialRepository: TrackSocialRepository? = null
+    private val trackSocialRepository: TrackSocialRepository? = null,
+    private val youTubeMusicRepository: YouTubeMusicRepository = YouTubeMusicRepository(),
+    private val trackDownloadManager: TrackDownloadManager? = null
 ) : ViewModel() {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -110,6 +117,8 @@ class MusicPlayerViewModel(
     private var progressJob: Job? = null
     private var trendingLoadJob: Job? = null
     private var discoverLoadJob: Job? = null
+    private var youtubeLoadJob: Job? = null
+    private var youtubeResolveJob: Job? = null
     private var autoDriveSyncJob: Job? = null
     private var voiceRecordingJob: Job? = null
     private var aiVoiceJob: Job? = null
@@ -117,10 +126,17 @@ class MusicPlayerViewModel(
     private var socialSummariesJob: Job? = null
     private var activeReactionsJob: Job? = null
     private var activeCommentsJob: Job? = null
-    private var lyricsFetchJob: Job? = null
 
     private val aiVoiceSearchRepository by lazy { AiVoiceSearchRepository() }
     private val audioVoiceRecorder by lazy { AudioVoiceRecorder(appContext) }
+    private val downloadManager by lazy {
+        trackDownloadManager ?: TrackDownloadManager(
+            context = appContext,
+            preferences = preferences,
+            youTubeMusicRepository = youTubeMusicRepository,
+            trendingRepository = trendingRepository
+        )
+    }
 
     private var activeDriveToken: String? = null
     private var activeAccount: UserAccount? = null
@@ -183,14 +199,27 @@ class MusicPlayerViewModel(
     private val _discoverError = MutableStateFlow<String?>(null)
     val discoverError: StateFlow<String?> = _discoverError.asStateFlow()
 
-    private val _onlyWithLyricsFilter = MutableStateFlow(false)
-    val onlyWithLyricsFilter: StateFlow<Boolean> = _onlyWithLyricsFilter.asStateFlow()
+    private val _youtubeTracks = MutableStateFlow<List<MusicTrack>>(emptyList())
+    val youtubeTracks: StateFlow<List<MusicTrack>> = _youtubeTracks.asStateFlow()
 
-    private val _activeLyricsTrack = MutableStateFlow<MusicTrack?>(null)
-    val activeLyricsTrack: StateFlow<MusicTrack?> = _activeLyricsTrack.asStateFlow()
+    private val _youtubeCategory = MutableStateFlow(YouTubeMusicCategory.IRANIAN_TOP)
+    val youtubeCategory: StateFlow<YouTubeMusicCategory> = _youtubeCategory.asStateFlow()
 
-    private val _isLoadingLyrics = MutableStateFlow(false)
-    val isLoadingLyrics: StateFlow<Boolean> = _isLoadingLyrics.asStateFlow()
+    private val _youtubeSearchQuery = MutableStateFlow("")
+    val youtubeSearchQuery: StateFlow<String> = _youtubeSearchQuery.asStateFlow()
+
+    private val _isLoadingYoutube = MutableStateFlow(false)
+    val isLoadingYoutube: StateFlow<Boolean> = _isLoadingYoutube.asStateFlow()
+
+    private val _youtubeError = MutableStateFlow<String?>(null)
+    val youtubeError: StateFlow<String?> = _youtubeError.asStateFlow()
+
+    private val _resolvingYoutubeTrackId = MutableStateFlow<String?>(null)
+    val resolvingYoutubeTrackId: StateFlow<String?> = _resolvingYoutubeTrackId.asStateFlow()
+
+    private val _downloadedTracks = MutableStateFlow<List<MusicTrack>>(emptyList())
+    val downloadStates: StateFlow<Map<String, TrackDownloadStatus>>
+        get() = downloadManager.downloadStates
 
     // Social reactions & comments states
     private val _trackSocialSummaries = MutableStateFlow<Map<String, TrackReactionSummary>>(emptyMap())
@@ -222,6 +251,7 @@ class MusicPlayerViewModel(
 
     private var hasLoadedInitialTrending = false
     private var hasLoadedInitialDiscover = false
+    private var hasLoadedInitialYoutube = false
     private var activeQueueTracks: List<MusicTrack> = emptyList()
 
     private val _playerState = MutableStateFlow(PlayerUiState())
@@ -274,6 +304,7 @@ class MusicPlayerViewModel(
             TrackFilter.ALL -> localTracks
             TrackFilter.FAVORITES -> (localTracks.filter { it.isFavorite } + favOnline)
                 .distinctBy { it.id }
+            TrackFilter.DOWNLOADED -> localTracks.filter { it.isDownloaded }
         }
         val q = query.trim().lowercase()
         if (q.isEmpty()) byFilter
@@ -338,7 +369,9 @@ class MusicPlayerViewModel(
             preferences.prefsFlow.collect { prefs ->
                 _favoriteOnlineTracks.value = prefs.favoriteOnlineTracks
                 _favoriteCount.value = prefs.favoriteIds.size
-                refreshLibrary(prefs.favoriteIds, prefs.importedUris)
+                _downloadedTracks.value = prefs.downloadedTracks
+                downloadManager.syncPersistedDownloads(prefs.downloadedTracks)
+                refreshLibrary(prefs.favoriteIds, prefs.importedUris, prefs.downloadedTracks)
                 syncTrendingFavoriteFlags(prefs.favoriteIds)
             }
         }
@@ -573,6 +606,11 @@ class MusicPlayerViewModel(
                 track.copy(isFavorite = track.id in favoriteIds)
             }
         }
+        if (_youtubeTracks.value.isNotEmpty()) {
+            _youtubeTracks.value = _youtubeTracks.value.map { track ->
+                track.copy(isFavorite = track.id in favoriteIds)
+            }
+        }
         mediaController?.let { syncFromController(it) }
     }
 
@@ -596,6 +634,7 @@ class MusicPlayerViewModel(
 
                             override fun onPlayerError(error: PlaybackException) {
                                 CrashReporter.recordNonFatal("EXOPLAYER_PLAYBACK", error, context = appContext)
+                                _statusMessage.value = "خطا در پخش صوت؛ اتصال اینترنت را بررسی کنید."
                             }
                         })
                         syncFromController(controller)
@@ -615,6 +654,7 @@ class MusicPlayerViewModel(
         return _allTracks.value.firstOrNull { it.id == id }
             ?: _trendingTracks.value.firstOrNull { it.id == id }
             ?: _discoverTracks.value.firstOrNull { it.id == id }
+            ?: _youtubeTracks.value.firstOrNull { it.id == id }
             ?: _favoriteOnlineTracks.value.firstOrNull { it.id == id }
             ?: _cloudFavorites.value?.firstOrNull { it.id == id }
             ?: activeQueueTracks.firstOrNull { it.id == id }
@@ -675,6 +715,11 @@ class MusicPlayerViewModel(
                         loadDiscoverTracks(forceRefresh = false)
                     }
                 }
+                OnlineSubSection.YOUTUBE_MUSIC -> {
+                    if (!hasLoadedInitialYoutube && !_isLoadingYoutube.value) {
+                        loadYoutubeTracks(forceRefresh = false)
+                    }
+                }
             }
         }
     }
@@ -694,6 +739,13 @@ class MusicPlayerViewModel(
                     loadDiscoverTracks(forceRefresh = false)
                 } else {
                     refreshSocialSummariesForTracks(_discoverTracks.value)
+                }
+            }
+            OnlineSubSection.YOUTUBE_MUSIC -> {
+                if (!hasLoadedInitialYoutube && !_isLoadingYoutube.value) {
+                    loadYoutubeTracks(forceRefresh = false)
+                } else {
+                    refreshSocialSummariesForTracks(_youtubeTracks.value)
                 }
             }
         }
@@ -798,6 +850,55 @@ class MusicPlayerViewModel(
         loadDiscoverTracks(forceRefresh = true)
     }
 
+    fun loadYoutubeTracks(forceRefresh: Boolean = true) {
+        if (!forceRefresh && hasLoadedInitialYoutube && _youtubeTracks.value.isNotEmpty()) return
+        if (forceRefresh) {
+            youTubeMusicRepository.resetDirectReachability()
+        }
+        youtubeLoadJob?.cancel()
+        youtubeLoadJob = viewModelScope.launch {
+            _isLoadingYoutube.value = true
+            _youtubeError.value = null
+            val favIds = preferences.prefsFlow.first().favoriteIds
+            val result = youTubeMusicRepository.fetchTracks(
+                category = _youtubeCategory.value,
+                customQuery = _youtubeSearchQuery.value,
+                favoriteIds = favIds
+            )
+            result.onSuccess { list ->
+                hasLoadedInitialYoutube = true
+                _youtubeTracks.value = list
+                _youtubeError.value = null
+                mediaController?.let { syncFromController(it) }
+                refreshSocialSummariesForTracks(list)
+            }.onFailure { err ->
+                CrashReporter.recordNonFatal("YOUTUBE_MUSIC_FETCH", err, context = appContext)
+                _youtubeError.value = "دریافت آهنگ‌های یوتیوب موزیک ممکن نشد. اتصال اینترنت را بررسی کرده و دوباره تلاش کنید."
+            }
+            _isLoadingYoutube.value = false
+        }
+    }
+
+    fun setYoutubeCategory(category: YouTubeMusicCategory) {
+        if (_youtubeCategory.value == category && _youtubeSearchQuery.value.isBlank()) return
+        _youtubeCategory.value = category
+        _youtubeSearchQuery.value = ""
+        loadYoutubeTracks(forceRefresh = true)
+    }
+
+    fun setYoutubeSearchQuery(query: String) {
+        _youtubeSearchQuery.value = query
+    }
+
+    fun submitYoutubeSearch() {
+        loadYoutubeTracks(forceRefresh = true)
+    }
+
+    fun clearYoutubeSearch() {
+        _youtubeSearchQuery.value = ""
+        loadYoutubeTracks(forceRefresh = true)
+    }
+
     fun refreshSocialSummariesForTracks(tracks: List<MusicTrack>) {
         val repo = trackSocialRepository ?: return
         if (!isCloudSocialActive() || tracks.isEmpty()) return
@@ -882,51 +983,6 @@ class MusicPlayerViewModel(
         _commentsError.value = null
     }
 
-    fun toggleOnlyWithLyricsFilter() {
-        _onlyWithLyricsFilter.value = !_onlyWithLyricsFilter.value
-    }
-
-    fun openTrackLyricsSheet(track: MusicTrack) {
-        lyricsFetchJob?.cancel()
-        _activeLyricsTrack.value = track
-        if (track.lyrics.isNotBlank()) {
-            _isLoadingLyrics.value = false
-            return
-        }
-
-        _isLoadingLyrics.value = true
-        lyricsFetchJob = viewModelScope.launch {
-            val fetched = runCatching { trendingRepository.fetchLyricsForTrack(track) }
-                .getOrNull()
-                ?.trim()
-                .orEmpty()
-            _isLoadingLyrics.value = false
-            if (fetched.isNotBlank()) {
-                val updatedTrack = track.copy(lyrics = fetched)
-                if (_activeLyricsTrack.value?.id == track.id) {
-                    _activeLyricsTrack.value = updatedTrack
-                }
-                _trendingTracks.value = _trendingTracks.value.map {
-                    if (it.id == track.id) it.copy(lyrics = fetched) else it
-                }
-                _discoverTracks.value = _discoverTracks.value.map {
-                    if (it.id == track.id) it.copy(lyrics = fetched) else it
-                }
-                if (_playerState.value.currentTrack?.id == track.id) {
-                    _playerState.value = _playerState.value.copy(
-                        currentTrack = _playerState.value.currentTrack?.copy(lyrics = fetched)
-                    )
-                }
-            }
-        }
-    }
-
-    fun closeTrackLyricsSheet() {
-        lyricsFetchJob?.cancel()
-        _isLoadingLyrics.value = false
-        _activeLyricsTrack.value = null
-    }
-
     fun toggleTrackReaction(track: MusicTrack, reaction: TrackReactionType) {
         val repo = trackSocialRepository
         if (repo == null || !isCloudSocialActive()) {
@@ -1000,7 +1056,11 @@ class MusicPlayerViewModel(
             _isScanning.value = true
             try {
                 val prefs = preferences.prefsFlow.first()
-                val tracks = repository.loadAllTracks(prefs.favoriteIds, prefs.importedUris)
+                val tracks = repository.loadAllTracks(
+                    prefs.favoriteIds,
+                    prefs.importedUris,
+                    prefs.downloadedTracks
+                )
                 _allTracks.value = tracks
                 mediaController?.let { syncFromController(it) }
                 if (showResultMessage) {
@@ -1016,8 +1076,12 @@ class MusicPlayerViewModel(
         }
     }
 
-    private suspend fun refreshLibrary(favoriteIds: Set<String>, importedUris: Set<String>) {
-        val tracks = repository.loadAllTracks(favoriteIds, importedUris)
+    private suspend fun refreshLibrary(
+        favoriteIds: Set<String>,
+        importedUris: Set<String>,
+        downloadedTracks: List<MusicTrack> = _downloadedTracks.value
+    ) {
+        val tracks = repository.loadAllTracks(favoriteIds, importedUris, downloadedTracks)
         _allTracks.value = tracks
         mediaController?.let { syncFromController(it) }
     }
@@ -1038,6 +1102,57 @@ class MusicPlayerViewModel(
         }
     }
 
+    fun downloadTrack(track: MusicTrack) {
+        val currentState = downloadManager.downloadStates.value[track.id]
+        if (currentState is TrackDownloadStatus.Downloading) {
+            _statusMessage.value = "«${track.title}» در حال دانلود است…"
+            return
+        }
+        if (currentState is TrackDownloadStatus.Downloaded) {
+            _statusMessage.value = "«${track.title}» قبلاً دانلود شده است"
+            return
+        }
+        viewModelScope.launch {
+            _statusMessage.value = "در حال دانلود «${track.title}»…"
+            val result = downloadManager.downloadTrack(track)
+            result.onSuccess {
+                _statusMessage.value = "«${track.title}» دانلود شد و به کتابخانه اضافه گردید"
+            }.onFailure { err ->
+                _statusMessage.value = err.localizedMessage ?: "دانلود آهنگ ناموفق بود"
+            }
+        }
+    }
+
+    fun deleteDownloadedTrack(track: MusicTrack) {
+        viewModelScope.launch {
+            downloadManager.removeDownload(track)
+            _statusMessage.value = "فایل دانلودشده حذف شد"
+        }
+    }
+
+    private fun resolveOfflineIfAvailable(track: MusicTrack): MusicTrack {
+        val state = downloadManager.downloadStates.value[track.id]
+        if (state is TrackDownloadStatus.Downloaded) {
+            val path = Uri.parse(state.localUri).path
+            if (!path.isNullOrBlank() && java.io.File(path).exists()) {
+                return track.copy(
+                    mediaUri = state.localUri,
+                    isOnline = false,
+                    isDownloaded = true,
+                    sourceLabel = "دانلود شده"
+                )
+            }
+        }
+        val persisted = _downloadedTracks.value.firstOrNull { it.id == track.id }
+        if (persisted != null) {
+            val path = Uri.parse(persisted.mediaUri).path
+            if (!path.isNullOrBlank() && java.io.File(path).exists()) {
+                return persisted.copy(isFavorite = track.isFavorite)
+            }
+        }
+        return track
+    }
+
     fun playTrack(track: MusicTrack) {
         val controller = mediaController ?: return
         val list = filteredTracks.value.ifEmpty { _allTracks.value }.ifEmpty { listOf(track) }
@@ -1046,17 +1161,104 @@ class MusicPlayerViewModel(
 
     fun playTrendingTrack(track: MusicTrack) {
         val controller = mediaController ?: return
-        val list = _trendingTracks.value.ifEmpty { listOf(track) }
-        playFromQueue(track, list, controller)
+        val resolvedTarget = resolveOfflineIfAvailable(track)
+        val list = _trendingTracks.value.map { resolveOfflineIfAvailable(it) }.ifEmpty { listOf(resolvedTarget) }
+        playFromQueue(resolvedTarget, list, controller)
     }
 
     fun playDiscoverTrack(track: MusicTrack) {
         val controller = mediaController ?: return
-        val list = _discoverTracks.value.ifEmpty { listOf(track) }
-        playFromQueue(track, list, controller)
+        val resolvedTarget = resolveOfflineIfAvailable(track)
+        val list = _discoverTracks.value.map { resolveOfflineIfAvailable(it) }.ifEmpty { listOf(resolvedTarget) }
+        playFromQueue(resolvedTarget, list, controller)
+    }
+
+    fun playYoutubeTrack(track: MusicTrack) {
+        val controller = mediaController
+        if (controller != null && _playerState.value.currentTrack?.id == track.id && controller.mediaItemCount > 0) {
+            if (controller.isPlaying) {
+                controller.pause()
+            } else {
+                controller.prepare()
+                controller.play()
+            }
+            return
+        }
+
+        val offlineVersion = resolveOfflineIfAvailable(track)
+        if (!offlineVersion.isOnline && offlineVersion.isDownloaded && controller != null) {
+            playFromQueue(offlineVersion, listOf(offlineVersion), controller)
+            return
+        }
+
+        val videoId = track.youtubeVideoId.ifBlank {
+            if (track.id.startsWith("ytm_")) track.id.removePrefix("ytm_") else ""
+        }
+        if (videoId.isBlank()) {
+            _statusMessage.value = "شناسه یوتیوب این آهنگ معتبر نیست."
+            return
+        }
+
+        youtubeResolveJob?.cancel()
+        _resolvingYoutubeTrackId.value = track.id
+        youtubeResolveJob = viewModelScope.launch {
+            val stream = runCatching { youTubeMusicRepository.resolveAudioStream(videoId) }.getOrNull()
+            if (stream != null && controller != null) {
+                _resolvingYoutubeTrackId.value = null
+                val resolvedTrack = track.copy(
+                    mediaUri = stream.url,
+                    youtubeVideoId = videoId
+                )
+                playFromQueue(resolvedTrack, listOf(resolvedTrack), controller)
+                return@launch
+            }
+
+            // Secondary in-app fallback: search direct MP3 mirror so playback stays 100% inside the app without VPN
+            val fallbackQueries = listOfNotNull(
+                "${track.artist} ${track.title}".trim().takeIf { it.isNotBlank() },
+                track.title.trim().takeIf { it.isNotBlank() }
+            ).distinct()
+            var fallbackTrack: MusicTrack? = null
+            for (q in fallbackQueries) {
+                fallbackTrack = runCatching {
+                    trendingRepository.fetchTrendingTracks(
+                        preset = TrendingPreset.HOT,
+                        category = TrendingCategory.ALL,
+                        customQuery = q,
+                        favoriteIds = if (track.isFavorite) setOf(track.id) else emptySet()
+                    ).getOrNull()?.firstOrNull()
+                }.getOrNull()
+                if (fallbackTrack != null) break
+            }
+
+            _resolvingYoutubeTrackId.value = null
+            if (fallbackTrack != null && controller != null) {
+                val mergedTrack = track.copy(
+                    mediaUri = fallbackTrack.mediaUri,
+                    artworkUri = track.artworkUri.ifBlank { fallbackTrack.artworkUri },
+                    youtubeVideoId = videoId
+                )
+                playFromQueue(mergedTrack, listOf(mergedTrack), controller)
+            } else {
+                _statusMessage.value = "پخش مستقیم این قطعه موقتاً برقرار نشد؛ اتصال اینترنت را بررسی کرده و دوباره تلاش کنید."
+            }
+        }
     }
 
     fun playFavoriteTrack(track: MusicTrack) {
+        val offlineTrack = resolveOfflineIfAvailable(track)
+        if (!offlineTrack.isOnline && offlineTrack.isDownloaded) {
+            val controller = mediaController ?: return
+            playFromQueue(offlineTrack, listOf(offlineTrack), controller)
+            return
+        }
+        if (track.youtubeVideoId.isNotBlank() ||
+            track.id.startsWith("ytm_") ||
+            track.mediaUri.contains("music.youtube.com/watch")
+        ) {
+            playYoutubeTrack(track)
+            return
+        }
         val controller = mediaController ?: return
         val currentFavorites = when (val state = favoritesUiState.value) {
             is FavoritesUiState.Success -> state.tracks
@@ -1081,6 +1283,26 @@ class MusicPlayerViewModel(
         playFromQueue(startTrack, currentFavorites, controller)
     }
 
+    fun playAllLibrary(shuffle: Boolean) {
+        val controller = mediaController ?: return
+        val libraryList = filteredTracks.value.ifEmpty { _allTracks.value }
+        if (libraryList.isEmpty()) return
+        controller.shuffleModeEnabled = shuffle
+        viewModelScope.launch { preferences.setShuffleEnabled(shuffle) }
+        val startTrack = if (shuffle) libraryList.random() else libraryList.first()
+        playFromQueue(startTrack, libraryList, controller)
+    }
+
+    fun setThemeMode(mode: AppThemeMode) {
+        viewModelScope.launch {
+            preferences.setThemeMode(mode)
+        }
+    }
+
+    fun toggleDayNightTheme(currentlyDark: Boolean) {
+        setThemeMode(if (currentlyDark) AppThemeMode.LIGHT else AppThemeMode.DARK)
+    }
+
     private fun playFromQueue(
         track: MusicTrack,
         queue: List<MusicTrack>,
@@ -1103,12 +1325,15 @@ class MusicPlayerViewModel(
                 when (_onlineSubSection.value) {
                     OnlineSubSection.TRENDING -> _trendingTracks.value.firstOrNull() ?: _discoverTracks.value.firstOrNull()
                     OnlineSubSection.DISCOVER -> _discoverTracks.value.firstOrNull() ?: _trendingTracks.value.firstOrNull()
+                    OnlineSubSection.YOUTUBE_MUSIC -> _youtubeTracks.value.firstOrNull() ?: _trendingTracks.value.firstOrNull()
                 } ?: _allTracks.value.firstOrNull()
             } else {
                 _allTracks.value.firstOrNull() ?: _trendingTracks.value.firstOrNull()
             }
             if (firstTrack != null) {
-                if (firstTrack.isOnline) {
+                if (firstTrack.youtubeVideoId.isNotBlank() || firstTrack.id.startsWith("ytm_")) {
+                    playYoutubeTrack(firstTrack)
+                } else if (firstTrack.isOnline) {
                     if (_onlineSubSection.value == OnlineSubSection.DISCOVER && _discoverTracks.value.any { it.id == firstTrack.id }) {
                         playDiscoverTrack(firstTrack)
                     } else {
@@ -1359,7 +1584,13 @@ class MusicPlayerViewModel(
         when (targetTab) {
             AppTab.ONLINE -> {
                 _activeTab.value = AppTab.ONLINE
-                if (_onlineSubSection.value == OnlineSubSection.DISCOVER && result.suggestedMoodPreset == null) {
+                if (_onlineSubSection.value == OnlineSubSection.YOUTUBE_MUSIC && result.suggestedMoodPreset == null) {
+                    _youtubeSearchQuery.value = effectiveQuery
+                    loadYoutubeTracks(forceRefresh = true)
+                    if (effectiveQuery.isNotBlank()) {
+                        _statusMessage.value = "جستجوی هوشمند یوتیوب موزیک: «$effectiveQuery»"
+                    }
+                } else if (_onlineSubSection.value == OnlineSubSection.DISCOVER && result.suggestedMoodPreset == null) {
                     _discoverSearchQuery.value = effectiveQuery
                     loadDiscoverTracks(forceRefresh = true)
                     if (effectiveQuery.isNotBlank()) {
@@ -1457,6 +1688,8 @@ class MusicPlayerViewModel(
         progressJob?.cancel()
         trendingLoadJob?.cancel()
         discoverLoadJob?.cancel()
+        youtubeLoadJob?.cancel()
+        youtubeResolveJob?.cancel()
         autoDriveSyncJob?.cancel()
         voiceRecordingJob?.cancel()
         aiVoiceJob?.cancel()
@@ -1464,7 +1697,6 @@ class MusicPlayerViewModel(
         socialSummariesJob?.cancel()
         activeReactionsJob?.cancel()
         activeCommentsJob?.cancel()
-        lyricsFetchJob?.cancel()
         audioVoiceRecorder.cancelRecording()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null

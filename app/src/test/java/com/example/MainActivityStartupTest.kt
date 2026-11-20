@@ -5,15 +5,20 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.os.Binder
 import android.util.DisplayMetrics
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import com.example.diagnostics.CrashReporter
+import com.example.player.AppThemeMode
 import com.example.player.MusicPlaybackService
 import com.google.firebase.FirebaseApp
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -123,7 +128,10 @@ class MainActivityStartupTest {
             Binder()
         )
         try {
-            kotlinx.coroutines.runBlocking { app.preferences.setGuestMode(false) }
+            kotlinx.coroutines.runBlocking {
+                app.preferences.setThemeMode(AppThemeMode.LIGHT)
+                app.preferences.setGuestMode(false)
+            }
             composeRule.waitForIdle()
             composeRule.onNodeWithTag("guest_sign_in_button").assertIsDisplayed().performClick()
             composeRule.waitUntil(3_000) {
@@ -131,6 +139,20 @@ class MainActivityStartupTest {
             }
 
             composeRule.onNodeWithTag("account_profile_button").assertIsDisplayed()
+            val initialMode = kotlinx.coroutines.runBlocking { app.preferences.prefsFlow.first().themeMode }
+            assertEquals(AppThemeMode.LIGHT, initialMode)
+            val toLightDesc = context.getString(R.string.theme_toggle_to_light)
+            val toDarkDesc = context.getString(R.string.theme_toggle_to_dark)
+            composeRule.onNodeWithTag("theme_toggle_button").assertIsDisplayed().performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithContentDescription(toLightDesc).fetchSemanticsNodes().isNotEmpty()
+            }
+            assertEquals(AppThemeMode.DARK, kotlinx.coroutines.runBlocking { app.preferences.prefsFlow.first().themeMode })
+            composeRule.onNodeWithTag("theme_toggle_button").performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithContentDescription(toDarkDesc).fetchSemanticsNodes().isNotEmpty()
+            }
+            assertEquals(AppThemeMode.LIGHT, kotlinx.coroutines.runBlocking { app.preferences.prefsFlow.first().themeMode })
             composeRule.onNodeWithTag("nav_tab_library").assertIsDisplayed()
             composeRule.onNodeWithTag("voice_search_library_button").assertIsDisplayed().performClick()
             composeRule.waitForIdle()
@@ -150,6 +172,7 @@ class MainActivityStartupTest {
             composeRule.onNodeWithTag("online_screen").assertIsDisplayed()
             composeRule.onNodeWithTag("online_subtab_TRENDING").assertIsDisplayed()
             composeRule.onNodeWithTag("online_subtab_DISCOVER").assertIsDisplayed()
+            composeRule.onNodeWithTag("online_subtab_YOUTUBE_MUSIC").assertIsDisplayed()
             composeRule.onNodeWithTag("voice_search_trending_button").assertIsDisplayed()
 
             composeRule.onNodeWithTag("online_subtab_DISCOVER").performClick()
@@ -158,6 +181,14 @@ class MainActivityStartupTest {
             }
             composeRule.onNodeWithTag("discover_search_input").assertIsDisplayed()
             composeRule.onNodeWithTag("online_style_NEW_HITS").assertIsDisplayed()
+
+            composeRule.onNodeWithTag("online_subtab_YOUTUBE_MUSIC").performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onAllNodesWithTag("youtube_search_input").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("youtube_search_input").assertIsDisplayed()
+            composeRule.onNodeWithTag("yt_cat_IRANIAN_TOP").assertIsDisplayed()
+            assertTrue(composeRule.onAllNodesWithTag("youtube_open_external_button").fetchSemanticsNodes().isEmpty())
 
             composeRule.onNodeWithTag("online_subtab_TRENDING").performClick()
             composeRule.waitUntil(3_000) {
@@ -189,6 +220,7 @@ class MainActivityStartupTest {
                 composeRule.onAllNodesWithTag("favorite_row_fav_test_1").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithTag("favorite_row_fav_test_1").assertIsDisplayed()
+            composeRule.onNodeWithTag("favorites_download_btn_fav_test_1").assertIsDisplayed()
             composeRule.onNodeWithTag("favorites_play_all_button").assertIsDisplayed()
             composeRule.onNodeWithTag("favorites_shuffle_all_button").assertIsDisplayed()
 
@@ -201,7 +233,12 @@ class MainActivityStartupTest {
             composeRule.onNodeWithTag("nav_tab_library").performClick()
             composeRule.waitForIdle()
 
-            composeRule.onNodeWithTag("auto_speed_volume_button").assertIsDisplayed().performClick()
+            composeRule.onNodeWithTag("filter_DOWNLOADED").performScrollTo().assertIsDisplayed().performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("filter_ALL").performScrollTo().assertIsDisplayed().performClick()
+            composeRule.waitForIdle()
+
+            composeRule.onNodeWithTag("auto_speed_volume_button").performScrollTo().assertIsDisplayed().performClick()
             composeRule.waitForIdle()
             composeRule.onNodeWithTag("speed_volume_switch").assertIsDisplayed()
             composeRule.onNodeWithTag("speed_volume_sensitivity_STRONG").performClick()
@@ -209,7 +246,7 @@ class MainActivityStartupTest {
             composeRule.onNodeWithTag("speed_volume_close_button").performClick()
             composeRule.waitForIdle()
 
-            composeRule.onNodeWithTag("driving_mode_button").assertIsDisplayed().performClick()
+            composeRule.onNodeWithTag("driving_mode_button").performScrollTo().assertIsDisplayed().performClick()
             composeRule.waitForIdle()
             composeRule.onNodeWithTag("driving_mode_overlay").assertIsDisplayed()
             composeRule.onNodeWithTag("driving_mode_speed_value").assertIsDisplayed()
@@ -222,8 +259,27 @@ class MainActivityStartupTest {
 
             composeRule.onNodeWithTag("account_profile_button").performClick()
             composeRule.waitForIdle()
-            composeRule.onNodeWithTag("dialog_guest_google_login_button").assertIsDisplayed()
-            composeRule.onNodeWithTag("dialog_sign_out_button").performClick()
+            composeRule.onNodeWithTag("theme_mode_DARK").performScrollTo().assertIsDisplayed().performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onNodeWithTag("theme_mode_DARK")
+                    .fetchSemanticsNode().config[SemanticsProperties.Selected]
+            }
+            assertEquals(
+                AppThemeMode.DARK,
+                kotlinx.coroutines.runBlocking { app.preferences.prefsFlow.first().themeMode }
+            )
+            composeRule.onNodeWithTag("theme_mode_LIGHT").performScrollTo().assertIsDisplayed().performClick()
+            composeRule.waitUntil(3_000) {
+                composeRule.onNodeWithTag("theme_mode_LIGHT")
+                    .fetchSemanticsNode().config[SemanticsProperties.Selected]
+            }
+            assertEquals(
+                AppThemeMode.LIGHT,
+                kotlinx.coroutines.runBlocking { app.preferences.prefsFlow.first().themeMode }
+            )
+            composeRule.onNodeWithTag("theme_mode_SYSTEM").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithTag("dialog_guest_google_login_button").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithTag("dialog_sign_out_button").performScrollTo().assertIsDisplayed().performClick()
             composeRule.waitUntil(3_000) {
                 composeRule.onAllNodesWithTag("google_sign_in_button").fetchSemanticsNodes().isNotEmpty()
             }

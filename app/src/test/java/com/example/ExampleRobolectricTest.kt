@@ -159,6 +159,27 @@ class ExampleRobolectricTest {
     }
 
     @Test
+    fun `theme mode preference persists across day night system changes and session clear`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = MusicPreferences(context)
+
+        prefs.setThemeMode(com.example.player.AppThemeMode.LIGHT)
+        assertEquals(com.example.player.AppThemeMode.LIGHT, prefs.prefsFlow.first().themeMode)
+
+        prefs.setThemeMode(com.example.player.AppThemeMode.SYSTEM)
+        assertEquals(com.example.player.AppThemeMode.SYSTEM, prefs.prefsFlow.first().themeMode)
+
+        prefs.clearUserSessionData()
+        assertEquals(com.example.player.AppThemeMode.SYSTEM, prefs.prefsFlow.first().themeMode)
+
+        prefs.setThemeMode(com.example.player.AppThemeMode.DARK)
+        assertEquals(com.example.player.AppThemeMode.DARK, prefs.prefsFlow.first().themeMode)
+
+        prefs.setThemeMode(com.example.player.AppThemeMode.LIGHT)
+        assertEquals(com.example.player.AppThemeMode.LIGHT, prefs.prefsFlow.first().themeMode)
+    }
+
+    @Test
     fun `voice search helper builds speech intent and normalizes persian queries`() {
         val intent = VoiceSearchHelper.buildSpeechIntent("نام آهنگ را بگویید")
         assertEquals(RecognizerIntent.ACTION_RECOGNIZE_SPEECH, intent.action)
@@ -458,5 +479,52 @@ class ExampleRobolectricTest {
             runtimeSha1Hex = expectedSha1
         )
         assertTrue(validSha1GenericCancel.contains("روش جایگزین"))
+    }
+
+    @Test
+    fun `downloaded tracks persist in preferences and load into offline library`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = MusicPreferences(context)
+        val downloadsDir = java.io.File(context.filesDir, "downloads").apply { mkdirs() }
+        val localAudioFile = java.io.File(downloadsDir, "test_offline_track.mp3").apply {
+            writeBytes(ByteArray(128) { 1 })
+        }
+
+        try {
+            val offlineTrack = MusicTrack(
+                id = "ytm_offline_1",
+                title = "تقدیر",
+                artist = "شادمهر عقیلی",
+                album = "آلبوم",
+                durationMs = 215_000L,
+                mediaUri = android.net.Uri.fromFile(localAudioFile).toString(),
+                artworkUri = "",
+                isOnline = false,
+                isDownloaded = true,
+                sourceLabel = "دانلود شده",
+                youtubeVideoId = "offline_1"
+            )
+            prefs.addDownloadedTrack(offlineTrack)
+
+            val stored = prefs.prefsFlow.first()
+            assertTrue(stored.downloadedTracks.any { it.id == "ytm_offline_1" })
+
+            val repo = com.example.player.MusicLibraryRepository(context, prefs)
+            val loadedTracks = repo.loadAllTracks(
+                favoriteIds = emptySet(),
+                importedUris = emptySet(),
+                downloadedTracks = stored.downloadedTracks
+            )
+            val found = loadedTracks.firstOrNull { it.id == "ytm_offline_1" }
+            assertEquals("تقدیر", found?.title)
+            assertTrue(found?.isDownloaded == true)
+            assertFalse(found?.isOnline == true)
+
+            prefs.removeDownloadedTrack("ytm_offline_1")
+            val afterRemove = prefs.prefsFlow.first()
+            assertFalse(afterRemove.downloadedTracks.any { it.id == "ytm_offline_1" })
+        } finally {
+            localAudioFile.delete()
+        }
     }
 }

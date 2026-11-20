@@ -21,10 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Whatshot
@@ -51,11 +51,15 @@ import com.example.R
 import com.example.player.MusicTrack
 import com.example.player.OnlineDiscoverStyle
 import com.example.player.OnlineSubSection
+import com.example.player.TrackDownloadStatus
 import com.example.player.TrackReactionSummary
 import com.example.player.TrackReactionType
 import com.example.player.TrendingCategory
 import com.example.player.TrendingPreset
+import com.example.player.YouTubeMusicCategory
 import com.example.ui.components.AvaSearchField
+import com.example.ui.components.EditorialAlbumsCarousel
+import com.example.ui.components.EditorialSectionHeader
 import com.example.ui.components.FeaturedOnlineSpotlightCard
 import com.example.ui.components.OnlineSegmentedSwitcher
 import com.example.ui.components.OnlineStudioHeader
@@ -91,10 +95,20 @@ fun OnlineMusicScreen(
     onClearDiscoverSearch: () -> Unit,
     onRefreshDiscover: () -> Unit,
     onPlayDiscoverTrack: (MusicTrack) -> Unit,
-    // Lyrics & Shared playback, voice, favorite & social callbacks
-    onlyWithLyrics: Boolean,
-    onToggleOnlyWithLyrics: () -> Unit,
-    onOpenLyrics: (MusicTrack) -> Unit,
+    // YouTube Music state & callbacks
+    youtubeTracks: List<MusicTrack>,
+    selectedYoutubeCategory: YouTubeMusicCategory,
+    youtubeSearchQuery: String,
+    isLoadingYoutube: Boolean,
+    youtubeError: String?,
+    resolvingYoutubeTrackId: String?,
+    onSelectYoutubeCategory: (YouTubeMusicCategory) -> Unit,
+    onYoutubeSearchQueryChange: (String) -> Unit,
+    onSubmitYoutubeSearch: () -> Unit,
+    onClearYoutubeSearch: () -> Unit,
+    onRefreshYoutube: () -> Unit,
+    onPlayYoutubeTrack: (MusicTrack) -> Unit,
+    // Shared playback, voice, favorite, theme & social callbacks
     currentTrackId: String?,
     isPlaying: Boolean,
     socialSummaries: Map<String, TrackReactionSummary>,
@@ -102,21 +116,38 @@ fun OnlineMusicScreen(
     onToggleFavorite: (MusicTrack) -> Unit,
     onToggleReaction: (MusicTrack, TrackReactionType) -> Unit,
     onOpenComments: (MusicTrack) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isDarkTheme: Boolean = false,
+    onToggleTheme: (() -> Unit)? = null,
+    downloadStates: Map<String, TrackDownloadStatus> = emptyMap(),
+    onDownloadTrack: (MusicTrack) -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
-    val isTrending = subSection == OnlineSubSection.TRENDING
-    val rawTracks = if (isTrending) trendingTracks else discoverTracks
-    val lyricsAvailableCount = rawTracks.count { it.lyrics.isNotBlank() }
-    val displayedTracks = if (onlyWithLyrics) {
-        rawTracks.filter { it.lyrics.isNotBlank() }
-    } else {
-        rawTracks
+    val displayedTracks = when (subSection) {
+        OnlineSubSection.TRENDING -> trendingTracks
+        OnlineSubSection.DISCOVER -> discoverTracks
+        OnlineSubSection.YOUTUBE_MUSIC -> youtubeTracks
     }
-    val isCurrentLoading = if (isTrending) isLoadingTrending else isLoadingDiscover
-    val currentError = if (isTrending) trendingError else discoverError
-    val onRefresh = if (isTrending) onRefreshTrending else onRefreshDiscover
-    val onPlayTrack = if (isTrending) onPlayTrendingTrack else onPlayDiscoverTrack
+    val isCurrentLoading = when (subSection) {
+        OnlineSubSection.TRENDING -> isLoadingTrending
+        OnlineSubSection.DISCOVER -> isLoadingDiscover
+        OnlineSubSection.YOUTUBE_MUSIC -> isLoadingYoutube
+    }
+    val currentError = when (subSection) {
+        OnlineSubSection.TRENDING -> trendingError
+        OnlineSubSection.DISCOVER -> discoverError
+        OnlineSubSection.YOUTUBE_MUSIC -> youtubeError
+    }
+    val onRefresh: () -> Unit = when (subSection) {
+        OnlineSubSection.TRENDING -> onRefreshTrending
+        OnlineSubSection.DISCOVER -> onRefreshDiscover
+        OnlineSubSection.YOUTUBE_MUSIC -> onRefreshYoutube
+    }
+    val onPlayTrack: (MusicTrack) -> Unit = when (subSection) {
+        OnlineSubSection.TRENDING -> onPlayTrendingTrack
+        OnlineSubSection.DISCOVER -> onPlayDiscoverTrack
+        OnlineSubSection.YOUTUBE_MUSIC -> onPlayYoutubeTrack
+    }
 
     Box(
         modifier = modifier
@@ -133,10 +164,11 @@ fun OnlineMusicScreen(
         ) {
             OnlineStudioHeader(
                 subSection = subSection,
-                tracksCount = rawTracks.size,
-                lyricsAvailableCount = lyricsAvailableCount,
+                tracksCount = displayedTracks.size,
                 isLoading = isCurrentLoading,
                 onRefresh = onRefresh,
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
                 modifier = Modifier.padding(top = 8.dp)
             )
 
@@ -148,178 +180,230 @@ fun OnlineMusicScreen(
                 }
             )
 
-            if (isTrending) {
-                AvaSearchField(
-                    value = trendingSearchQuery,
-                    onValueChange = onTrendingSearchQueryChange,
-                    placeholderText = stringResource(R.string.trending_search_hint),
-                    voiceContentDescription = stringResource(R.string.voice_search_cd),
-                    onVoiceSearchClick = {
-                        focusManager.clearFocus()
-                        onVoiceSearchClick()
-                    },
-                    onSubmitSearch = {
-                        focusManager.clearFocus()
-                        onSubmitTrendingSearch()
-                    },
-                    onClearSearch = {
-                        focusManager.clearFocus()
-                        onClearTrendingSearch()
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = {
+            when (subSection) {
+                OnlineSubSection.TRENDING -> {
+                    AvaSearchField(
+                        value = trendingSearchQuery,
+                        onValueChange = onTrendingSearchQueryChange,
+                        placeholderText = stringResource(R.string.trending_search_hint),
+                        voiceContentDescription = stringResource(R.string.voice_search_cd),
+                        onVoiceSearchClick = {
+                            focusManager.clearFocus()
+                            onVoiceSearchClick()
+                        },
+                        onSubmitSearch = {
                             focusManager.clearFocus()
                             onSubmitTrendingSearch()
-                        }
-                    ),
-                    inputTestTag = "trending_search_input",
-                    voiceTestTag = "voice_search_trending_button"
-                )
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    item(key = "lyrics_filter_chip") {
-                        LyricsOnlyFilterChip(
-                            selected = onlyWithLyrics,
-                            lyricsCount = lyricsAvailableCount,
-                            onClick = onToggleOnlyWithLyrics
-                        )
-                    }
-                    items(TrendingCategory.entries, key = { it.name }) { category ->
-                        val selected = selectedCategory == category
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onSelectTrendingCategory(category) },
-                            label = { Text(category.labelFa) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = when (category) {
-                                        TrendingCategory.ALL -> Icons.Rounded.Whatshot
-                                        TrendingCategory.SONGS -> Icons.Rounded.MusicNote
-                                        TrendingCategory.REMIXES -> Icons.Rounded.GraphicEq
-                                    },
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                selectedLeadingIconColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.testTag("trending_cat_${category.name}")
-                        )
-                    }
-                }
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    items(TrendingPreset.entries, key = { it.name }) { preset ->
-                        val selected = selectedPreset == preset && trendingSearchQuery.isBlank()
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
+                        },
+                        onClearSearch = {
+                            focusManager.clearFocus()
+                            onClearTrendingSearch()
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
                                 focusManager.clearFocus()
-                                onSelectTrendingPreset(preset)
-                            },
-                            label = { Text(preset.labelFa) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Rounded.AutoAwesome,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                selectedLeadingIconColor = MaterialTheme.colorScheme.secondary
-                            ),
-                            modifier = Modifier.testTag("trending_preset_${preset.name}")
-                        )
+                                onSubmitTrendingSearch()
+                            }
+                        ),
+                        inputTestTag = "trending_search_input",
+                        voiceTestTag = "voice_search_trending_button"
+                    )
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(TrendingCategory.entries, key = { it.name }) { category ->
+                            val selected = selectedCategory == category
+                            FilterChip(
+                                selected = selected,
+                                onClick = { onSelectTrendingCategory(category) },
+                                label = { Text(category.labelFa) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = when (category) {
+                                            TrendingCategory.ALL -> Icons.Rounded.Whatshot
+                                            TrendingCategory.SONGS -> Icons.Rounded.MusicNote
+                                            TrendingCategory.REMIXES -> Icons.Rounded.GraphicEq
+                                        },
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                                ),
+                                modifier = Modifier.testTag("trending_cat_${category.name}")
+                            )
+                        }
+                    }
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(TrendingPreset.entries, key = { it.name }) { preset ->
+                            val selected = selectedPreset == preset && trendingSearchQuery.isBlank()
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    onSelectTrendingPreset(preset)
+                                },
+                                label = { Text(preset.labelFa) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AutoAwesome,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    selectedLeadingIconColor = MaterialTheme.colorScheme.secondary
+                                ),
+                                modifier = Modifier.testTag("trending_preset_${preset.name}")
+                            )
+                        }
                     }
                 }
-            } else {
-                AvaSearchField(
-                    value = discoverSearchQuery,
-                    onValueChange = onDiscoverSearchQueryChange,
-                    placeholderText = stringResource(R.string.online_discover_search_hint),
-                    voiceContentDescription = stringResource(R.string.voice_search_cd),
-                    onVoiceSearchClick = {
-                        focusManager.clearFocus()
-                        onVoiceSearchClick()
-                    },
-                    onSubmitSearch = {
-                        focusManager.clearFocus()
-                        onSubmitDiscoverSearch()
-                    },
-                    onClearSearch = {
-                        focusManager.clearFocus()
-                        onClearDiscoverSearch()
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = {
+
+                OnlineSubSection.DISCOVER -> {
+                    AvaSearchField(
+                        value = discoverSearchQuery,
+                        onValueChange = onDiscoverSearchQueryChange,
+                        placeholderText = stringResource(R.string.online_discover_search_hint),
+                        voiceContentDescription = stringResource(R.string.voice_search_cd),
+                        onVoiceSearchClick = {
+                            focusManager.clearFocus()
+                            onVoiceSearchClick()
+                        },
+                        onSubmitSearch = {
                             focusManager.clearFocus()
                             onSubmitDiscoverSearch()
-                        }
-                    ),
-                    inputTestTag = "discover_search_input",
-                    voiceTestTag = "voice_search_discover_button"
-                )
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    item(key = "lyrics_filter_chip_discover") {
-                        LyricsOnlyFilterChip(
-                            selected = onlyWithLyrics,
-                            lyricsCount = lyricsAvailableCount,
-                            onClick = onToggleOnlyWithLyrics
-                        )
-                    }
-                    items(OnlineDiscoverStyle.entries, key = { it.name }) { style ->
-                        val selected = selectedDiscoverStyle == style && discoverSearchQuery.isBlank()
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
+                        },
+                        onClearSearch = {
+                            focusManager.clearFocus()
+                            onClearDiscoverSearch()
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
                                 focusManager.clearFocus()
-                                onSelectDiscoverStyle(style)
-                            },
-                            label = { Text(style.labelFa) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Rounded.AutoAwesome,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
-                            ),
-                            modifier = Modifier.testTag("online_style_${style.name}")
-                        )
+                                onSubmitDiscoverSearch()
+                            }
+                        ),
+                        inputTestTag = "discover_search_input",
+                        voiceTestTag = "voice_search_discover_button"
+                    )
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(OnlineDiscoverStyle.entries, key = { it.name }) { style ->
+                            val selected = selectedDiscoverStyle == style && discoverSearchQuery.isBlank()
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    onSelectDiscoverStyle(style)
+                                },
+                                label = { Text(style.labelFa) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AutoAwesome,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
+                                ),
+                                modifier = Modifier.testTag("online_style_${style.name}")
+                            )
+                        }
+                    }
+                }
+
+                OnlineSubSection.YOUTUBE_MUSIC -> {
+                    AvaSearchField(
+                        value = youtubeSearchQuery,
+                        onValueChange = onYoutubeSearchQueryChange,
+                        placeholderText = stringResource(R.string.ytm_search_hint),
+                        voiceContentDescription = stringResource(R.string.voice_search_cd),
+                        onVoiceSearchClick = {
+                            focusManager.clearFocus()
+                            onVoiceSearchClick()
+                        },
+                        onSubmitSearch = {
+                            focusManager.clearFocus()
+                            onSubmitYoutubeSearch()
+                        },
+                        onClearSearch = {
+                            focusManager.clearFocus()
+                            onClearYoutubeSearch()
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                focusManager.clearFocus()
+                                onSubmitYoutubeSearch()
+                            }
+                        ),
+                        inputTestTag = "youtube_search_input",
+                        voiceTestTag = "voice_search_youtube_button"
+                    )
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(YouTubeMusicCategory.entries, key = { it.name }) { category ->
+                            val selected = selectedYoutubeCategory == category && youtubeSearchQuery.isBlank()
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    onSelectYoutubeCategory(category)
+                                },
+                                label = { Text(category.labelFa) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PlayCircle,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    selectedLeadingIconColor = MaterialTheme.colorScheme.secondary
+                                ),
+                                modifier = Modifier.testTag("yt_cat_${category.name}")
+                            )
+                        }
                     }
                 }
             }
 
             // Main Feed Content Area
             when {
-                isCurrentLoading && rawTracks.isEmpty() -> {
+                isCurrentLoading && displayedTracks.isEmpty() -> {
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -331,15 +415,19 @@ fun OnlineMusicScreen(
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             CircularProgressIndicator(
-                                color = if (isTrending) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.tertiary
+                                color = when (subSection) {
+                                    OnlineSubSection.TRENDING -> MaterialTheme.colorScheme.primary
+                                    OnlineSubSection.DISCOVER -> MaterialTheme.colorScheme.tertiary
+                                    OnlineSubSection.YOUTUBE_MUSIC -> MaterialTheme.colorScheme.secondary
                                 }
                             )
                             Text(
                                 text = stringResource(
-                                    if (isTrending) R.string.trending_loading else R.string.online_discover_loading
+                                    when (subSection) {
+                                        OnlineSubSection.TRENDING -> R.string.trending_loading
+                                        OnlineSubSection.DISCOVER -> R.string.online_discover_loading
+                                        OnlineSubSection.YOUTUBE_MUSIC -> R.string.ytm_loading
+                                    }
                                 ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -349,30 +437,24 @@ fun OnlineMusicScreen(
                     }
                 }
 
-                currentError != null && rawTracks.isEmpty() -> {
+                currentError != null && displayedTracks.isEmpty() -> {
                     OnlineEmptyOrErrorState(
-                        isTrending = isTrending,
+                        subSection = subSection,
                         title = stringResource(
-                            if (isTrending) R.string.trending_empty_title else R.string.online_discover_empty_title
+                            when (subSection) {
+                                OnlineSubSection.TRENDING -> R.string.trending_empty_title
+                                OnlineSubSection.DISCOVER -> R.string.online_discover_empty_title
+                                OnlineSubSection.YOUTUBE_MUSIC -> R.string.ytm_empty_title
+                            }
                         ),
                         subtitle = currentError,
                         actionLabel = stringResource(R.string.trending_retry),
-                        actionTestTag = if (isTrending) "trending_retry_button" else "online_discover_retry_button",
+                        actionTestTag = when (subSection) {
+                            OnlineSubSection.TRENDING -> "trending_retry_button"
+                            OnlineSubSection.DISCOVER -> "online_discover_retry_button"
+                            OnlineSubSection.YOUTUBE_MUSIC -> "yt_retry_button"
+                        },
                         onAction = onRefresh,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    )
-                }
-
-                displayedTracks.isEmpty() && onlyWithLyrics && rawTracks.isNotEmpty() -> {
-                    OnlineEmptyOrErrorState(
-                        isTrending = isTrending,
-                        title = "آهنگی با متن آماده در این لیست نبود",
-                        subtitle = "می‌توانید فیلتر «فقط دارای متن» را بردارید تا همه ${rawTracks.size} آهنگ آنلاین نمایش داده شوند.",
-                        actionLabel = "نمایش همه آهنگ‌ها",
-                        actionTestTag = "online_clear_lyrics_filter_button",
-                        onAction = onToggleOnlyWithLyrics,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
@@ -381,12 +463,20 @@ fun OnlineMusicScreen(
 
                 displayedTracks.isEmpty() -> {
                     OnlineEmptyOrErrorState(
-                        isTrending = isTrending,
+                        subSection = subSection,
                         title = stringResource(
-                            if (isTrending) R.string.trending_empty_title else R.string.online_discover_empty_title
+                            when (subSection) {
+                                OnlineSubSection.TRENDING -> R.string.trending_empty_title
+                                OnlineSubSection.DISCOVER -> R.string.online_discover_empty_title
+                                OnlineSubSection.YOUTUBE_MUSIC -> R.string.ytm_empty_title
+                            }
                         ),
                         subtitle = stringResource(
-                            if (isTrending) R.string.trending_empty_subtitle else R.string.online_discover_empty_subtitle
+                            when (subSection) {
+                                OnlineSubSection.TRENDING -> R.string.trending_empty_subtitle
+                                OnlineSubSection.DISCOVER -> R.string.online_discover_empty_subtitle
+                                OnlineSubSection.YOUTUBE_MUSIC -> R.string.ytm_empty_subtitle
+                            }
                         ),
                         actionLabel = null,
                         actionTestTag = "",
@@ -409,15 +499,41 @@ fun OnlineMusicScreen(
                         item(key = "featured_${featured.id}") {
                             FeaturedOnlineSpotlightCard(
                                 track = featured,
-                                isTrending = isTrending,
+                                subSection = subSection,
                                 isCurrent = currentTrackId == featured.id,
                                 isPlaying = isPlaying,
+                                isResolvingStream = resolvingYoutubeTrackId == featured.id,
                                 socialSummary = socialSummaries[featured.id] ?: TrackReactionSummary(),
                                 onPlayClick = { onPlayTrack(featured) },
                                 onToggleFavorite = { onToggleFavorite(featured) },
-                                onOpenLyrics = { onOpenLyrics(featured) },
                                 onToggleReaction = { reaction -> onToggleReaction(featured, reaction) },
-                                onOpenComments = { onOpenComments(featured) }
+                                onOpenComments = { onOpenComments(featured) },
+                                downloadStatus = downloadStates[featured.id],
+                                onDownloadClick = { onDownloadTrack(featured) }
+                            )
+                        }
+
+                        if (remaining.size >= 3) {
+                            item(key = "online_albums_header_${subSection.name}") {
+                                EditorialSectionHeader(
+                                    title = stringResource(R.string.editorial_new_albums_heading),
+                                    actionLabel = "${displayedTracks.size} قطعه",
+                                    onActionClick = { onPlayTrack(featured) }
+                                )
+                            }
+                            item(key = "online_albums_carousel_${subSection.name}") {
+                                EditorialAlbumsCarousel(
+                                    tracks = remaining,
+                                    currentTrackId = currentTrackId,
+                                    isPlaying = isPlaying,
+                                    onTrackClick = onPlayTrack
+                                )
+                            }
+                        }
+
+                        item(key = "online_song_list_header_${subSection.name}") {
+                            EditorialSectionHeader(
+                                title = stringResource(R.string.editorial_song_list_heading)
                             )
                         }
 
@@ -426,17 +542,23 @@ fun OnlineMusicScreen(
                             key = { _, item -> item.id }
                         ) { idx, track ->
                             RedesignedOnlineTrackCard(
-                                rank = if (isTrending) idx + 2 else null,
+                                rank = if (subSection == OnlineSubSection.TRENDING || subSection == OnlineSubSection.YOUTUBE_MUSIC) {
+                                    idx + 2
+                                } else {
+                                    null
+                                },
                                 track = track,
-                                isTrending = isTrending,
+                                subSection = subSection,
                                 isCurrent = currentTrackId == track.id,
                                 isPlaying = isPlaying,
+                                isResolvingStream = resolvingYoutubeTrackId == track.id,
                                 socialSummary = socialSummaries[track.id] ?: TrackReactionSummary(),
                                 onPlayClick = { onPlayTrack(track) },
                                 onToggleFavorite = { onToggleFavorite(track) },
-                                onOpenLyrics = { onOpenLyrics(track) },
                                 onToggleReaction = { reaction -> onToggleReaction(track, reaction) },
-                                onOpenComments = { onOpenComments(track) }
+                                onOpenComments = { onOpenComments(track) },
+                                downloadStatus = downloadStates[track.id],
+                                onDownloadClick = { onDownloadTrack(track) }
                             )
                         }
                     }
@@ -447,41 +569,8 @@ fun OnlineMusicScreen(
 }
 
 @Composable
-private fun LyricsOnlyFilterChip(
-    selected: Boolean,
-    lyricsCount: Int,
-    onClick: () -> Unit
-) {
-    val label = if (lyricsCount > 0) {
-        "${stringResource(R.string.online_lyrics_only_filter)} ($lyricsCount)"
-    } else {
-        stringResource(R.string.online_lyrics_only_filter)
-    }
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label) },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.MenuBook,
-                contentDescription = null,
-                modifier = Modifier.size(15.dp)
-            )
-        },
-        shape = RoundedCornerShape(14.dp),
-        colors = FilterChipDefaults.filterChipColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-            selectedLeadingIconColor = MaterialTheme.colorScheme.tertiary
-        ),
-        modifier = Modifier.testTag("online_lyrics_only_filter")
-    )
-}
-
-@Composable
 private fun OnlineEmptyOrErrorState(
-    isTrending: Boolean,
+    subSection: OnlineSubSection,
     title: String,
     subtitle: String,
     actionLabel: String?,
@@ -510,9 +599,17 @@ private fun OnlineEmptyOrErrorState(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Icon(
-                    imageVector = if (isTrending) Icons.Rounded.Whatshot else Icons.Rounded.Public,
+                    imageVector = when (subSection) {
+                        OnlineSubSection.TRENDING -> Icons.Rounded.Whatshot
+                        OnlineSubSection.DISCOVER -> Icons.Rounded.Public
+                        OnlineSubSection.YOUTUBE_MUSIC -> Icons.Rounded.PlayCircle
+                    },
                     contentDescription = null,
-                    tint = if (isTrending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                    tint = when (subSection) {
+                        OnlineSubSection.TRENDING -> MaterialTheme.colorScheme.primary
+                        OnlineSubSection.DISCOVER -> MaterialTheme.colorScheme.tertiary
+                        OnlineSubSection.YOUTUBE_MUSIC -> MaterialTheme.colorScheme.secondary
+                    },
                     modifier = Modifier.size(44.dp)
                 )
                 Text(
@@ -529,30 +626,17 @@ private fun OnlineEmptyOrErrorState(
                 )
                 if (actionLabel != null && onAction != null) {
                     Spacer(modifier = Modifier.height(4.dp))
-                    if (actionTestTag == "online_clear_lyrics_filter_button") {
-                        OutlinedButton(
-                            onClick = onAction,
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag(actionTestTag)
-                        ) {
-                            Text(actionLabel)
-                        }
-                    } else {
-                        Button(
-                            onClick = onAction,
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag(actionTestTag)
-                        ) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(actionLabel)
-                        }
+                    Button(
+                        onClick = onAction,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag(actionTestTag)
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(actionLabel)
                     }
                 }
             }
